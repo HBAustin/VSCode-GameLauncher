@@ -77,6 +77,35 @@ ipcMain.on('launch-game-process', (event, { id, executablePath }) => {
     });
 });
 
+// --- KEEP THIS VERSION (Handles old cover file removal & updates renderer) ---
+ipcMain.on('apply-cover', async (event, { gameId, imageUrl, oldPath }) => {
+    try {
+        const folder = path.join(app.getPath('documents'), 'HB-Launcher-Covers');
+        if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+        
+        const localPath = path.join(folder, `${gameId}.jpg`);
+        
+        // If there was an old image, delete it to prevent asset bloat
+        if (oldPath && fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+        }
+
+        const res = await axios({ url: imageUrl, responseType: 'arraybuffer' });
+        fs.writeFileSync(localPath, Buffer.from(res.data));
+        
+        // Notify renderer to update gameData and trigger instant DOM cache-busting refresh
+        if (win) win.webContents.send('cover-updated', { id: gameId, path: localPath });
+        if (pickerWin) pickerWin.close();
+    } catch (err) { console.error("Cover apply error:", err); }
+});
+
+// Listener to clean up cover art files when a game is entirely removed from your library
+ipcMain.on('delete-cover-file', (event, filePath) => {
+    if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+    }
+});
+
 ipcMain.handle('scan-steam-library', async () => {
     const discovered = [];
     const possiblePaths = [
@@ -131,18 +160,6 @@ ipcMain.on('open-picker', (event, gameData) => {
     pickerWin.once('ready-to-show', () => { pickerWin.webContents.send('init-picker', gameData); });
 });
 
-ipcMain.on('apply-cover', async (event, { gameId, imageUrl }) => {
-    try {
-        const folder = path.join(app.getPath('documents'), 'HB-Launcher-Covers');
-        if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-        const localPath = path.join(folder, `${gameId}.jpg`);
-        const res = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-        fs.writeFileSync(localPath, Buffer.from(res.data));
-        if (win) win.webContents.send('cover-updated', { id: gameId, path: localPath });
-        if (pickerWin) pickerWin.close();
-    } catch (err) {}
-});
-
 ipcMain.on('add-game-requested', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ['openFile'],
@@ -152,7 +169,6 @@ ipcMain.on('add-game-requested', async (event) => {
     });
 
     if (!canceled && filePaths.length > 0) {
-        // Send the path back to the renderer so it can process the new entry
         event.sender.send('add-game-confirmed', filePaths[0]);
     }
 });

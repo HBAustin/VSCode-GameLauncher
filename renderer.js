@@ -22,7 +22,6 @@ function playUISound(type) {
 
         const now = audioCtx.currentTime;
 
-        // Helper function to build clean organic layers safely
         function createLayer(waveType, startFreq, endFreq, volume, duration, delay = 0) {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
@@ -43,20 +42,17 @@ function playUISound(type) {
         }
 
         if (type === 'navigate') {
-            // Modern UI Organic Click: Layered low mechanical thud + soft transient click
-            createLayer('sine', 120, 90, 0.15, 0.04);   // Low-end deep weight
-            createLayer('triangle', 650, 400, 0.02, 0.02); // Crisp surface pop
+            createLayer('sine', 120, 90, 0.15, 0.04);
+            createLayer('triangle', 650, 400, 0.02, 0.02);
         } 
         else if (type === 'select') {
-            // Modern Dashboard Smooth Confirmation: Ethereal chord arrangement
-            createLayer('sine', 330, 330, 0.10, 0.25); // Mid note base focus
-            createLayer('sine', 440, 440, 0.08, 0.22, 0.02); // Harmony note layer delayed by 20ms
-            createLayer('triangle', 554, 554, 0.03, 0.18, 0.04); // Bright top accent spark
+            createLayer('sine', 330, 330, 0.10, 0.25);
+            createLayer('sine', 440, 440, 0.08, 0.22, 0.02);
+            createLayer('triangle', 554, 554, 0.03, 0.18, 0.04);
         } 
         else if (type === 'back') {
-            // Modern Fluid Dissolve Sweep: Smooth atmospheric descending glide
-            createLayer('sine', 260, 140, 0.12, 0.20); // Low gliding dampener
-            createLayer('sine', 196, 110, 0.08, 0.25); // Sub acoustic drop shadow
+            createLayer('sine', 260, 140, 0.12, 0.20);
+            createLayer('sine', 196, 110, 0.08, 0.25);
         }
     } catch (err) {
         console.error("Audio generation exception caught safely:", err);
@@ -87,7 +83,6 @@ let isShift = false, isCapsLock = false, lastL3Click = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null; 
 
-// Continuous Backspace State Engine Mappings
 let backspaceTimeout = null;
 let backspaceInterval = null;
 let isBackspaceHeld = false;
@@ -108,7 +103,7 @@ function saveToDisk() { fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, nul
 function launchItem(id) {
     const d = gameData[id];
     if (!d || !d.path) return;
-    playUISound('select'); // Play sound right when starting executable launch thread
+    playUISound('select');
     ipcRenderer.send('launch-game-process', { id, executablePath: d.path });
 }
 
@@ -142,7 +137,13 @@ function renderLibrary() {
         card.className = 'game-card';
         card.id = id;
         if (d.favorite) card.classList.add('is-fav');
-        if (d.cover) card.style.backgroundImage = `url("local-image://${d.cover.replace(/\\/g, '/')}?t=${Date.now()}")`;
+        
+        if (d.cover && d.cover.length > 0) {
+            const escapedPath = d.cover.replace(/\\/g, '/');
+            card.style.backgroundImage = `url("local-image://${escapedPath}?t=${Date.now()}")`;
+        } else {
+            card.style.backgroundImage = 'none';
+        }
         
         card.onmouseenter = () => { if (!isControllerMode && d.cover) calculateGlow(card, d.cover); };
         card.onmouseleave = () => { if (!isControllerMode) resetGlobalAccent(); };
@@ -285,7 +286,7 @@ function triggerBackspace() {
     if (input && input.value.length > 0) {
         input.value = input.value.slice(0, -1);
         input.dispatchEvent(new Event('input', { bubbles: true }));
-        playUISound('navigate'); // Click sound on every character deletion sequence
+        playUISound('navigate');
     }
 }
 
@@ -350,27 +351,25 @@ function updateGamepad() {
             }
             if (moved) { 
                 applyControllerFocus(); 
-                playUISound('navigate'); // Trigger UI move blip
+                playUISound('navigate'); 
                 lastMoveTime = now; 
             }
         }
 
-        // --- BUTTON HANDLING RULES ---
         if (activeGp.buttons[0].pressed && !lastButtonState[0]) handleA();
         if (activeGp.buttons[1].pressed && !lastButtonState[1]) handleB();
         
-        // Advanced Repeat Backspace Mapping Loop (Button index 2: X / Square)
         if (activeGp.buttons[2].pressed) {
             if (activeModal === 'edit') {
                 if (!isBackspaceHeld) {
                     isBackspaceHeld = true;
-                    triggerBackspace(); // Immediate character drop on click down
+                    triggerBackspace(); 
                     
                     backspaceTimeout = setTimeout(() => {
                         backspaceInterval = setInterval(() => {
                             triggerBackspace();
-                        }, 40); // Standard rapid repetition rate
-                    }, 500); // Standard initial holding delay stall
+                        }, 40); 
+                    }, 500); 
                 }
             } else if (!lastButtonState[2]) {
                 handleX();
@@ -384,15 +383,12 @@ function updateGamepad() {
                 const input = document.getElementById('newNameInput');
                 input.value += " ";
                 input.dispatchEvent(new Event('input', { bubbles: true }));
-                playUISound('navigate'); // Treat spacebar input as a keyboard click noise
+                playUISound('navigate');
             }
         }
 
-        // R2 / RT (Button Index 7) Virtual Keyboard Shortcut: Instantly saves the text changes
         if (activeGp.buttons[7].pressed && !lastButtonState[7]) {
-            if (activeModal === 'edit') {
-                executeAction('save-name');
-            }
+            if (activeModal === 'edit') executeAction('save-name');
         }
         
         if (activeGp.buttons[8].pressed && !lastButtonState[8] && !activeModal) {
@@ -413,7 +409,7 @@ function updateGamepad() {
 
         for (let i = 0; i < activeGp.buttons.length; i++) {
             if (i === 2 && activeModal === 'edit') continue; 
-            if (i === 7 && activeModal === 'edit') continue; // Bypass execution stepping during dynamic text saves
+            if (i === 7 && activeModal === 'edit') continue; 
             lastButtonState[i] = activeGp.buttons[i].pressed;
         }
         if (activeModal !== 'edit') {
@@ -430,7 +426,7 @@ function handleA() {
         const input = document.getElementById('newNameInput');
         input.value += (isShift || isCapsLock) ? k.toUpperCase() : k.toLowerCase();
         input.dispatchEvent(new Event('input', { bubbles: true }));
-        playUISound('navigate'); // Small typing click sound
+        playUISound('navigate'); 
         if (isShift) { isShift = false; applyControllerFocus(); } 
     } else if (activeModal) {
         const btns = document.querySelectorAll(`#${activeModal}Modal .menu-btn`);
@@ -454,7 +450,6 @@ function handleA() {
 }
 
 async function executeAction(action) {
-    // Treat confirming modal actions as a structural validation sound
     playUISound('select');
     if (action === 'toggle-fav') {
         gameData[currentEditingId].favorite = !gameData[currentEditingId].favorite; saveToDisk(); renderLibrary(); closeModal();
@@ -470,7 +465,15 @@ async function executeAction(action) {
         if (p) { gameData[currentEditingId].path = p; saveToDisk(); }
         closeModal();
     } else if (action === 'remove') { 
-        delete gameData[currentEditingId]; saveToDisk(); renderLibrary(); closeModal();
+        // --- FIXED: Added cleanup logic before deleting the game entry ---
+        const d = gameData[currentEditingId];
+        if (d && d.cover) {
+            ipcRenderer.send('delete-cover-file', d.cover);
+        }
+        delete gameData[currentEditingId]; 
+        saveToDisk(); 
+        renderLibrary(); 
+        closeModal();
     } else if (action === 'save-name') { 
         const val = document.getElementById('newNameInput').value;
         if (currentEditingId === 'search-filter') { librarySearch.value = val; renderLibrary(); } 
@@ -490,7 +493,7 @@ function handleB() {
             applyControllerFocus(); 
             playUISound('back');
         } else {
-            playUISound('select'); // Treat entering the final application quit menu prompt as an opening action
+            playUISound('select');
             openModal('quit');
         }
     } 
@@ -500,7 +503,7 @@ function handleX() {
     if (currentZone === 'header') return;
     const actualId = sortedIds[focusIndex];
     if (actualId && !activeModal) {
-        playUISound('select'); // Pop sound when bringing up context options overlay
+        playUISound('select');
         showOptionsModal(actualId);
     }
 }
@@ -542,7 +545,7 @@ function initKeyboard() {
             const input = document.getElementById('newNameInput');
             input.value += (isShift || isCapsLock) ? key.toUpperCase() : key.toLowerCase();
             input.dispatchEvent(new Event('input', { bubbles: true }));
-            playUISound('navigate'); // Typing sound for mouse clicks on OSK too
+            playUISound('navigate');
             if (isShift) { isShift = false; applyControllerFocus(); }
         };
         
@@ -564,12 +567,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// --- IPC LISTENERS ---
+
 ipcRenderer.on('add-game-confirmed', (event, filePath) => {
-    // 1. Prepare data
     const fileName = path.basename(filePath, path.extname(filePath));
     const newId = 'game-' + Date.now();
 
-    // 2. Add to your existing gameData object
     gameData[newId] = {
         name: fileName,
         path: filePath,
@@ -579,9 +582,22 @@ ipcRenderer.on('add-game-confirmed', (event, filePath) => {
         cover: ''
     };
 
-    // 3. Save to disk and update the visual list
     saveToDisk();
     renderLibrary();
-    
     console.log("New game added to library:", fileName);
+});
+
+// --- FIXED: Instant DOM update listener for new covers ---
+ipcRenderer.on('cover-updated', (event, { id, path }) => {
+    if (gameData[id]) {
+        gameData[id].cover = path;
+        saveToDisk();
+        
+        // Target the specific card and update its background instantly with a cache buster
+        const card = document.getElementById(id);
+        if (card) {
+            const escapedPath = path.replace(/\\/g, '/');
+            card.style.backgroundImage = `url("local-image://${escapedPath}?t=${Date.now()}")`;
+        }
+    }
 });
