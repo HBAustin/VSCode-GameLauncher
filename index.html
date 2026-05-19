@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HB Launcher</title>
+    <style>
+        :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; }
+        * { box-sizing: border-box; outline: none; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow-x: hidden; transition: padding-bottom 0.3s; }
+        body.controller-mode { padding-bottom: 8rem; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #2a2a2a; padding-bottom: 1rem; }
+        .controls { display: flex; gap: 1rem; align-items: center; }
+        
+        select, #librarySearch, .add-btn { 
+            background: #1a1a1a; color: white; border: 1px solid #333; padding: 8px 12px; 
+            border-radius: 6px; cursor: pointer; transition: border-color 0.2s, transform 0.2s; 
+        }
+        select:hover, #librarySearch:hover, .add-btn:hover { border-color: #555; }
+        body.controller-mode .header-focused { border-color: var(--accent) !important; transform: scale(1.03); background: #222; }
+
+        #library { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
+
+        .game-card { 
+            width: 100%; aspect-ratio: 2/3; background: var(--card-bg) center/cover no-repeat; 
+            border-radius: 12px; display: flex; align-items: flex-end; cursor: pointer; 
+            border: 2px solid transparent; overflow: hidden; position: relative; 
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s, border-color 0.2s; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        body.controller-mode .game-card.focused { transform: scale(1.08); border-color: var(--accent); z-index: 10; }
+        .game-card:hover { transform: scale(1.03); z-index: 5; }
+
+        .fav-badge {
+            position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.75);
+            color: #ffb703; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;
+            font-weight: bold; border: 1px solid #ffb703; z-index: 2; display: none;
+        }
+        .game-card.is-fav .fav-badge { display: block; }
+
+        .info-overlay { 
+            width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.6)); 
+            padding: 0.6rem 1rem; text-align: center; transform: translateY(100%); transition: transform 0.3s; 
+        }
+        .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0); }
+        .game-title { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .game-meta { font-size: 0.7rem; color: #aaa; margin-top: 2px; }
+
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+        .modal-content { background: #161616; padding: 2.5rem; border-radius: 20px; width: 95%; max-width: 680px; border: 1px solid #2d2d2d; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+        .menu-options { display: flex; flex-direction: column; gap: 12px; margin-top: 25px; }
+        .menu-btn { background: #222; border: 2px solid transparent; color: white; padding: 14px; border-radius: 12px; cursor: pointer; text-align: left; font-weight: 600; transition: 0.2s; }
+        .menu-btn.selected, .menu-btn:hover { border-color: var(--accent); background: #2a2a2a; transform: scale(1.02); }
+
+        .keyboard-container { 
+            display: none; max-height: 0; opacity: 0; overflow: hidden; 
+            transition: max-height 0.4s cubic-bezier(0.075, 0.82, 0.165, 1), opacity 0.3s ease; 
+            margin-top: 20px; background: #0d0d0d; border: 1px solid #222; padding: 15px; border-radius: 14px; 
+        }
+        body.controller-mode .keyboard-container.visible { display: block; max-height: 400px; opacity: 1; }
+        
+        .keyboard-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+        .key { 
+            background: #1a1a1a; padding: 14px 5px; border-radius: 8px; font-size: 1rem; 
+            font-weight: 600; border: 2px solid transparent; text-transform: lowercase; 
+            cursor: pointer; color: #eee; transition: all 0.15s ease;
+        }
+        .key.uppercase { text-transform: uppercase; }
+        .key.selected { border-color: var(--accent); background: #252525; transform: scale(1.05); color: #fff; box-shadow: 0 0 15px rgba(0, 120, 212, 0.3); }
+
+        .osk-legend-ui { 
+            display: none; justify-content: center; flex-wrap: wrap; gap: 1.5rem; 
+            margin-top: 15px; padding: 10px; background: #111; border-radius: 8px; border: 1px solid #222;
+        }
+        body.controller-mode .osk-legend-ui { display: flex; }
+
+        .footer { 
+            position: fixed; bottom: -120px; left: 0; right: 0; background: rgba(10,10,10,0.98); 
+            padding: 1.2rem 2.5rem; display: flex; gap: 3rem; border-top: 1px solid #333; z-index: 1000; transition: bottom 0.4s; 
+        }
+        body.controller-mode .footer { bottom: 0; }
+        .glyph-item { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 600; color: #fff; }
+        
+        .glyph { 
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; 
+            border: 2px solid transparent; transition: all 0.1s; flex-shrink: 0;
+            background: #ffffff; color: #0a0a0a; border-radius: 50%; position: relative;
+        }
+
+        .glyph.a::after, .glyph.b::after, .glyph.x::after, .glyph.y::after { display: block; line-height: 1; text-align: center; font-weight: 500; font-size: 18px; }
+        .glyph.a::after { content: "A"; }
+        .glyph.b::after { content: "B"; }
+        .glyph.x::after { content: "X"; }
+        .glyph.y::after { content: "Y"; }
+
+        .glyph.ps-cross::before, .glyph.ps-cross::after { content: ""; position: absolute; width: 20px; height: 2.5px; background: #0a0a0a; border-radius: 2px; }
+        .glyph.ps-cross::before { transform: rotate(45deg); }
+        .glyph.ps-cross::after { transform: rotate(-45deg); }
+        .glyph.ps-circle::after { content: ""; width: 14px; height: 14px; border: 2.5px solid #0a0a0a; border-radius: 50%; }
+        .glyph.ps-square::after { content: ""; width: 13px; height: 13px; border: 2.5px solid #0a0a0a; border-radius: 2px; }
+        
+        .glyph.ps-triangle::after { 
+            content: ""; 
+            position: absolute;
+            top: 8px;
+            width: 16px; 
+            height: 14px; 
+            background: #0a0a0a;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+        }
+
+        .glyph.ps-triangle::before {
+            content: "";
+            position: absolute;
+            top: 11px;
+            z-index: 1;
+            width: 10px;
+            height: 9px;
+            background: #ffffff;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+        }
+
+        .glyph.ls { background: #555; border-radius: 50%; font-size: 0.7rem; color: white; }
+        .glyph.ls::after { content: "L3"; font-weight: 900; }
+
+        #newNameInput { width: 100%; padding: 1.2rem; background: #000; color: white; border: 1px solid #444; border-radius: 12px; font-size: 1.1rem; text-align: center; }
+        #librarySearch { width: 250px; text-align: left; }
+        #colorCanvas { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>LIBRARY</h1>
+        <div class="controls">
+            <input type="text" id="librarySearch" placeholder="Search games..." data-header-idx="0">
+            <select id="sortSelect" data-header-idx="1">
+                <option value="alpha">Alphabetical</option>
+                <option value="added">Recently Added</option>
+                <option value="played">Most Played</option>
+                <option value="last-played">Last Played</option>
+            </select>
+            <button class="add-btn" id="addBtn" data-header-idx="2">+ Add Game</button>
+        </div>
+    </div>
+    <div id="library"></div>
+
+    <div id="contextModal" class="modal">
+        <div class="modal-content">
+            <h2 id="contextGameName" style="color:var(--accent); margin-top:0;">Options</h2>
+            <div class="menu-options">
+                <div class="menu-btn" data-action="toggle-fav" id="favMenuBtn">Favorite</div>
+                <div class="menu-btn" data-action="rename">Rename Game</div>
+                <div class="menu-btn" data-action="cover">Search Cover Online</div>
+                <div class="menu-btn" data-action="open-folder">Open File Location</div>
+                <div class="menu-btn" data-action="change-path">Change Game Path</div>
+                <div class="menu-btn" data-action="remove">Remove from Library</div>
+                <div class="menu-btn" data-action="cancel">Cancel</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <input type="text" id="newNameInput" readonly>
+            <div class="keyboard-container" id="keyboardContainer">
+                <div class="keyboard-grid" id="virtualKeyboard"></div>
+                
+                <div class="osk-legend-ui" id="oskLegend">
+                    <div class="glyph-item"><div class="glyph a"></div> <span>Type</span></div>
+                    <div class="glyph-item"><div class="glyph x"></div> <span>Backspace</span></div>
+                    <div class="glyph-item"><div class="glyph y"></div> <span>Space</span></div>
+                    <div class="glyph-item"><div class="glyph ls"></div> <span id="oskShiftLabel">Shift</span></div>
+                    <div class="glyph-item"><div class="glyph b"></div> <span>Cancel</span></div>
+                    <p>Use R2/RT to Save</p>
+                </div>
+            </div>
+            <div class="menu-options" style="flex-direction:row; gap:10px; margin-top:20px;">
+                <div class="menu-btn selected" data-action="save-name" style="flex:1; text-align:center">Save</div>
+                <div class="menu-btn" data-action="cancel-edit" style="flex:1; text-align:center">Cancel</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="quitModal" class="modal">
+        <div class="modal-content">
+            <h2>Exit Launcher?</h2>
+            <div class="menu-options">
+                <div class="menu-btn selected" data-action="quit-confirm">Quit</div>
+                <div class="menu-btn" data-action="quit-cancel">Cancel</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="glyph-item"><div class="glyph a"></div> <span id="aLabel">Select</span></div>
+        <div class="glyph-item"><div class="glyph x"></div> <span id="xLabel">Options</span></div>
+        <div class="glyph-item"><div class="glyph b"></div> <span id="bLabel">Back</span></div>
+    </div>
+
+    <canvas id="colorCanvas"></canvas>
+    <script src="renderer.js"></script>
+</body>
+</html>
