@@ -143,6 +143,20 @@ ipcMain.on('apply-cover', async (event, { gameId, imageUrl }) => {
     } catch (err) {}
 });
 
+ipcMain.on('add-game-requested', async (event) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+            { name: 'Executables', extensions: ['exe', 'bat', 'cmd', 'lnk', 'url'] }
+        ]
+    });
+
+    if (!canceled && filePaths.length > 0) {
+        // Send the path back to the renderer so it can process the new entry
+        event.sender.send('add-game-confirmed', filePaths[0]);
+    }
+});
+
 ipcMain.handle('select-game', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ 
         properties: ['openFile'], 

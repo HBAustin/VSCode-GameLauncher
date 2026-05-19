@@ -554,4 +554,34 @@ document.addEventListener('DOMContentLoaded', () => {
     initKeyboard();
     renderLibrary();
     requestAnimationFrame(updateGamepad);
+
+    const addBtn = document.getElementById('addBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            console.log("Add Game clicked - sending IPC");
+            ipcRenderer.send('add-game-requested');
+        });
+    }
+});
+
+ipcRenderer.on('add-game-confirmed', (event, filePath) => {
+    // 1. Prepare data
+    const fileName = path.basename(filePath, path.extname(filePath));
+    const newId = 'game-' + Date.now();
+
+    // 2. Add to your existing gameData object
+    gameData[newId] = {
+        name: fileName,
+        path: filePath,
+        playtime: 0,
+        lastPlayed: 0,
+        favorite: false,
+        cover: ''
+    };
+
+    // 3. Save to disk and update the visual list
+    saveToDisk();
+    renderLibrary();
+    
+    console.log("New game added to library:", fileName);
 });
