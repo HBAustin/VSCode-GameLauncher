@@ -21,7 +21,7 @@ PS controller (tested with DS4 and DualSense controllers)
 //Switch Controller - untested, might show Xbox Glyphs//
 
 Playtime tracking (WIP - may not work correctly) 
-Search function (Not working corrctly yet, expect bugs)
+Search function (Controller Searching works correctly, KBM support mostly broken)
 
 --SteamGridDB--
 
