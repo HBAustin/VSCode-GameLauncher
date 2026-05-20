@@ -9,7 +9,6 @@ const canvas = document.getElementById('colorCanvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const SAVE_PATH = './library.json';
 
-// --- SYSTEM AUDIO SYNTHESIZER ---
 let audioCtx = null;
 function playUISound(type) {
     try {
