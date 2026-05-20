@@ -58,26 +58,22 @@ ipcMain.on('launch-game-process', (event, { id, executablePath }) => {
     if (!executablePath || !fs.existsSync(executablePath)) return;
     if (activeGameProcesses[id]) return;
 
-    const startTime = Date.now();
     const gameDir = path.dirname(executablePath);
     const child = exec(`"${executablePath}"`, { cwd: gameDir }, (error) => {
         if (error) console.error(error);
     });
 
     activeGameProcesses[id] = child;
-    event.reply('game-started', { id, startTime });
+    event.reply('game-started', { id });
 
     child.on('exit', () => {
-        const endTime = Date.now();
-        const durationMinutes = Math.round((endTime - startTime) / 1000 / 60);
         delete activeGameProcesses[id];
         if (win && !win.isDestroyed()) {
-            win.webContents.send('game-stopped', { id, durationMinutes, lastPlayed: endTime });
+            win.webContents.send('game-stopped', { id });
         }
     });
 });
 
-// --- KEEP THIS VERSION (Handles old cover file removal & updates renderer) ---
 ipcMain.on('apply-cover', async (event, { gameId, imageUrl, oldPath }) => {
     try {
         const folder = path.join(app.getPath('documents'), 'HB-Launcher-Covers');
@@ -85,7 +81,6 @@ ipcMain.on('apply-cover', async (event, { gameId, imageUrl, oldPath }) => {
         
         const localPath = path.join(folder, `${gameId}.jpg`);
         
-        // If there was an old image, delete it to prevent asset bloat
         if (oldPath && fs.existsSync(oldPath)) {
             fs.unlinkSync(oldPath);
         }
@@ -93,13 +88,11 @@ ipcMain.on('apply-cover', async (event, { gameId, imageUrl, oldPath }) => {
         const res = await axios({ url: imageUrl, responseType: 'arraybuffer' });
         fs.writeFileSync(localPath, Buffer.from(res.data));
         
-        // Notify renderer to update gameData and trigger instant DOM cache-busting refresh
         if (win) win.webContents.send('cover-updated', { id: gameId, path: localPath });
         if (pickerWin) pickerWin.close();
     } catch (err) { console.error("Cover apply error:", err); }
 });
 
-// Listener to clean up cover art files when a game is entirely removed from your library
 ipcMain.on('delete-cover-file', (event, filePath) => {
     if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);

@@ -3,24 +3,8 @@
     "name": "Martio Kart",
     "path": "D:\\Downloads\\steam icons\\WheelWizardWindows.exe",
     "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1776196673533.jpg",
-    "lastPlayed": 1776199697396,
+    "lastPlayed": "2026-05-20T10:43:58.337Z",
     "playtime": 0,
-    "favorite": false
-  },
-  "game-1776326582459": {
-    "name": "Call of Duty® Modern Warfare®",
-    "path": "C:\\Users\\hayde\\OneDrive\\Desktop\\Call of Duty® Modern Warfare®.url",
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1776326582459.jpg",
-    "playtime": 0,
-    "lastPlayed": 0,
-    "favorite": false
-  },
-  "game-1778486413265": {
-    "name": "Fortnite",
-    "path": "C:\\Users\\hayde\\OneDrive\\Desktop\\Fortnite.lnk",
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1778486413265.jpg",
-    "playtime": 0,
-    "lastPlayed": 0,
     "favorite": false
   },
   "game-1779181651404543": {
@@ -28,15 +12,7 @@
     "path": "D:\\SteamLibrary\\steamapps\\common\\Half-Life 2\\hl2.exe",
     "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1779181651404543.jpg",
     "playtime": 0,
-    "lastPlayed": 0,
-    "favorite": false
-  },
-  "game-1779184975147": {
-    "name": "Counter-Strike 2",
-    "path": "C:\\Users\\hayde\\OneDrive\\Desktop\\Counter-Strike 2.url",
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1779184975147.jpg",
-    "playtime": 0,
-    "lastPlayed": 1779185640580,
+    "lastPlayed": "2026-05-20T10:42:06.703Z",
     "favorite": false
   },
   "game-1779194504660": {
@@ -45,6 +21,6 @@
     "playtime": 0,
     "lastPlayed": 0,
     "favorite": false,
-    "cover": ""
+    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1779194504660.jpg"
   }
 }

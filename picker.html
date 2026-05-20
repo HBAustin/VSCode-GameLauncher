@@ -30,7 +30,6 @@
         body.controller-mode .picker-footer { display: flex; }
         .glyph-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: bold; }
         
-        /* Consistent Global UI Controller Glyphs */
         .glyph { width: 26px; height: 26px; background: white; color: black; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
         .glyph.a { background: #107c10; color: white; }
         .glyph.b { background: #e81123; color: white; }
@@ -42,7 +41,7 @@
     <h2>Select Cover</h2>
     <div class="search-bar">
         <input type="text" id="searchInput" placeholder="Search game...">
-        <button onclick="searchGame()">Search</button>
+        <button id="searchBtn" onclick="searchGame()">Search</button>
     </div>
     <div id="results"></div>
 
@@ -57,15 +56,19 @@
         let itemsCount = 0;
         let isGridMode = false;
 
-        // Controller logic values
         let isControllerMode = false;
-        let currentZone = 'header'; // 'header' or 'results'
+        let currentZone = 'header'; 
         let focusIndex = 0;
         let lastMoveTime = 0;
         
-        // Edge State Tracking Framework Mappings
         let lastButtonState = new Array(20).fill(false);
         let lastActiveGamepadIndex = null;
+
+        document.getElementById('searchInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                searchGame();
+            }
+        });
 
         ipcRenderer.on('init-picker', (e, data) => {
             currentGameId = data.id;
@@ -127,7 +130,12 @@
         }
 
         window.addEventListener('mousemove', () => setControllerActive(false));
-        window.addEventListener('keydown', () => setControllerActive(false));
+        
+        window.addEventListener('keydown', (e) => {
+            if (document.activeElement !== document.getElementById('searchInput')) {
+                setControllerActive(false);
+            }
+        });
 
         function updateGlyphs(gamepadId) {
             const id = gamepadId.toLowerCase();
@@ -226,7 +234,6 @@
                     if (moved) { applyFocus(); lastMoveTime = now; }
                 }
 
-                // Precision Debounced Button Execution Blocks
                 if (activeGp.buttons[0].pressed && !lastButtonState[0]) { 
                     if (currentZone === 'header') {
                         searchGame();
@@ -239,7 +246,6 @@
                     window.close();
                 }
 
-                // Sync the input edge changes smoothly
                 for (let i = 0; i < activeGp.buttons.length; i++) {
                     lastButtonState[i] = activeGp.buttons[i].pressed;
                 }

@@ -21,28 +21,63 @@
 
         #library { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
 
+        /* THE CARD CONTAINER: 
+           We use clip-path HERE on the parent card wrapper instead of overflow: hidden.
+           This completely chops off the game title out-of-bounds, matches the 12px radius perfectly, 
+           and allows your JS color-glow calculate function to change box-shadow safely.
+        */
         .game-card { 
             width: 100%; aspect-ratio: 2/3; background: var(--card-bg) center/cover no-repeat; 
             border-radius: 12px; display: flex; align-items: flex-end; cursor: pointer; 
-            border: 2px solid transparent; overflow: hidden; position: relative; 
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s, border-color 0.2s; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 2px solid transparent; 
+            position: relative; 
+            z-index: 2;
+            
+            /* FIX 1: Forces the text overlay to clip exactly at the 12px border radius */
+            clip-path: inset(0% 0% 0% 0% round 12px); 
+            
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s, box-shadow 0.25s ease; 
         }
-        body.controller-mode .game-card.focused { transform: scale(1.08); border-color: var(--accent); z-index: 10; }
+        
+        body.controller-mode .game-card.focused { transform: scale(1.08); border-color: var(--accent) !important; z-index: 10; }
         .game-card:hover { transform: scale(1.03); z-index: 5; }
 
         .fav-badge {
             position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.75);
             color: #ffb703; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;
-            font-weight: bold; border: 1px solid #ffb703; z-index: 2; display: none;
+            font-weight: bold; border: 1px solid #ffb703; z-index: 5; display: none;
         }
         .game-card.is-fav .fav-badge { display: block; }
 
+        /* THE OVERLAY:
+           By explicitly defining position: absolute and zeroing out the bottom anchor,
+           we bypass any rendering engine inline style overrides coming from the JavaScript loops.
+        */
         .info-overlay { 
-            width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.6)); 
-            padding: 0.6rem 1rem; text-align: center; transform: translateY(100%); transition: transform 0.3s; 
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%; 
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, rgba(0,0,0,0.4) 100%); 
+            padding: 0.7rem 1rem; 
+            text-align: center; 
+            
+            /* FIX 2: Pushes the overlay entirely below the card view mask boundary */
+            transform: translateY(101%); 
+            
+            /* FIX 3: Matches lower corner curvature 1:1 using inherited card geometries */
+            border-bottom-left-radius: 12px; 
+            border-bottom-right-radius: 12px;
+            z-index: 3;
+            transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
         }
-        .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0); }
+        
+        /* Slide back up cleanly on active target interactions */
+        .game-card:hover .info-overlay, 
+        body.controller-mode .game-card.focused .info-overlay { 
+            transform: translateY(0) !important; 
+        }
+
         .game-title { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .game-meta { font-size: 0.7rem; color: #aaa; margin-top: 2px; }
 
@@ -53,11 +88,13 @@
         .menu-btn.selected, .menu-btn:hover { border-color: var(--accent); background: #2a2a2a; transform: scale(1.02); }
 
         .keyboard-container { 
-            display: none; max-height: 0; opacity: 0; overflow: hidden; 
-            transition: max-height 0.4s cubic-bezier(0.075, 0.82, 0.165, 1), opacity 0.3s ease; 
-            margin-top: 20px; background: #0d0d0d; border: 1px solid #222; padding: 15px; border-radius: 14px; 
+            max-height: 0; opacity: 0; overflow: hidden; margin-top: 0;
+            background: #0d0d0d; border: 1px solid transparent; padding: 0 15px; border-radius: 14px; 
+            transition: max-height 0.4s cubic-bezier(0.075, 0.82, 0.165, 1), opacity 0.3s ease, margin-top 0.3s ease, padding 0.3s ease; 
         }
-        body.controller-mode .keyboard-container.visible { display: block; max-height: 400px; opacity: 1; }
+        body.controller-mode .keyboard-container.visible { 
+            max-height: 450px; opacity: 1; margin-top: 20px; padding: 15px; border-color: #222;
+        }
         
         .keyboard-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
         .key { 
@@ -100,24 +137,10 @@
         .glyph.ps-square::after { content: ""; width: 13px; height: 13px; border: 2.5px solid #0a0a0a; border-radius: 2px; }
         
         .glyph.ps-triangle::after { 
-            content: ""; 
-            position: absolute;
-            top: 8px;
-            width: 16px; 
-            height: 14px; 
-            background: #0a0a0a;
-            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            content: ""; position: absolute; top: 8px; width: 16px; height: 14px; background: #0a0a0a; clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
         }
-
         .glyph.ps-triangle::before {
-            content: "";
-            position: absolute;
-            top: 11px;
-            z-index: 1;
-            width: 10px;
-            height: 9px;
-            background: #ffffff;
-            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            content: ""; position: absolute; top: 11px; z-index: 1; width: 10px; height: 9px; background: #ffffff; clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
         }
 
         .glyph.ls { background: #555; border-radius: 50%; font-size: 0.7rem; color: white; }
@@ -136,7 +159,6 @@
             <select id="sortSelect" data-header-idx="1">
                 <option value="alpha">Alphabetical</option>
                 <option value="added">Recently Added</option>
-                <option value="played">Most Played</option>
                 <option value="last-played">Last Played</option>
             </select>
             <button class="add-btn" id="addBtn" data-header-idx="2">+ Add Game</button>
@@ -161,16 +183,16 @@
 
     <div id="editModal" class="modal">
         <div class="modal-content">
-            <input type="text" id="newNameInput" readonly>
+            <input type="text" id="newNameInput">
             <div class="keyboard-container" id="keyboardContainer">
                 <div class="keyboard-grid" id="virtualKeyboard"></div>
                 
                 <div class="osk-legend-ui" id="oskLegend">
-                    <div class="glyph-item"><div class="glyph a"></div> <span>Type</span></div>
-                    <div class="glyph-item"><div class="glyph x"></div> <span>Backspace</span></div>
-                    <div class="glyph-item"><div class="glyph y"></div> <span>Space</span></div>
+                    <div class="glyph-item"><div class="glyph a" id="oskTypeGlyph"></div> <span>Type</span></div>
+                    <div class="glyph-item"><div class="glyph x" id="oskBackGlyph"></div> <span>Backspace</span></div>
+                    <div class="glyph-item"><div class="glyph y" id="oskSpaceGlyph"></div> <span>Space</span></div>
                     <div class="glyph-item"><div class="glyph ls"></div> <span id="oskShiftLabel">Shift</span></div>
-                    <div class="glyph-item"><div class="glyph b"></div> <span>Cancel</span></div>
+                    <div class="glyph-item"><div class="glyph b" id="oskCancelGlyph"></div> <span>Cancel</span></div>
                     <p>Use R2/RT to Save</p>
                 </div>
             </div>
@@ -192,9 +214,9 @@
     </div>
 
     <div class="footer">
-        <div class="glyph-item"><div class="glyph a"></div> <span id="aLabel">Select</span></div>
-        <div class="glyph-item"><div class="glyph x"></div> <span id="xLabel">Options</span></div>
-        <div class="glyph-item"><div class="glyph b"></div> <span id="bLabel">Back</span></div>
+        <div class="glyph-item"><div class="glyph a" id="footerAGlyph"></div> <span id="aLabel">Select</span></div>
+        <div class="glyph-item"><div class="glyph x" id="footerXGlyph"></div> <span id="xLabel">Options</span></div>
+        <div class="glyph-item"><div class="glyph b" id="footerBGlyph"></div> <span id="bLabel">Back</span></div>
     </div>
 
     <canvas id="colorCanvas"></canvas>

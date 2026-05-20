@@ -1,4 +1,4 @@
-const { ipcRenderer, shell } = require('electron');
+const { ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -9,158 +9,98 @@ const canvas = document.getElementById('colorCanvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const SAVE_PATH = './library.json';
 
-// --- MODERN SYSTEM AUDIO SYNTHESIZER ENGINE (0KB FOOTPRINT) ---
+// --- SYSTEM AUDIO SYNTHESIZER ---
 let audioCtx = null;
 function playUISound(type) {
     try {
-        if (!audioCtx) {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContext) return;
-            audioCtx = new AudioContext();
-        }
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
-
         const now = audioCtx.currentTime;
 
-        function createLayer(waveType, startFreq, endFreq, volume, duration, delay = 0) {
+        const createLayer = (waveType, start, end, vol, dur, delay = 0) => {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            
             osc.type = waveType;
-            osc.frequency.setValueAtTime(startFreq, now + delay);
-            if (endFreq !== startFreq) {
-                osc.frequency.exponentialRampToValueAtTime(endFreq, now + delay + duration);
-            }
-            
-            gain.gain.setValueAtTime(volume, now + delay);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + delay + duration);
-            
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start(now + delay);
-            osc.stop(now + delay + duration);
-        }
+            osc.frequency.setValueAtTime(start, now + delay);
+            if (end !== start) osc.frequency.exponentialRampToValueAtTime(end, now + delay + dur);
+            gain.gain.setValueAtTime(vol, now + delay);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + delay + dur);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(now + delay); osc.stop(now + delay + dur);
+        };
 
-        if (type === 'navigate') {
-            createLayer('sine', 120, 90, 0.15, 0.04);
-            createLayer('triangle', 650, 400, 0.02, 0.02);
-        } 
-        else if (type === 'select') {
-            createLayer('sine', 330, 330, 0.10, 0.25);
-            createLayer('sine', 440, 440, 0.08, 0.22, 0.02);
-            createLayer('triangle', 554, 554, 0.03, 0.18, 0.04);
-        } 
-        else if (type === 'back') {
-            createLayer('sine', 260, 140, 0.12, 0.20);
-            createLayer('sine', 196, 110, 0.08, 0.25);
-        }
-    } catch (err) {
-        console.error("Audio generation exception caught safely:", err);
-    }
+        if (type === 'navigate') { createLayer('sine', 120, 90, 0.15, 0.04); createLayer('triangle', 650, 400, 0.02, 0.02); }
+        else if (type === 'select') { createLayer('sine', 330, 330, 0.10, 0.25); createLayer('sine', 440, 440, 0.08, 0.22, 0.02); createLayer('triangle', 554, 554, 0.03, 0.18, 0.04); }
+        else if (type === 'back') { createLayer('sine', 260, 140, 0.12, 0.20); createLayer('sine', 196, 110, 0.08, 0.25); }
+    } catch (e) { console.error(e); }
 }
 
-const keys = [
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p",
-    "a", "s", "d", "f", "g", "h", "j", "k", "l", "-",
-    "z", "x", "c", "v", "b", "n", "m", ",", ".", "_"
-];
-
-let gameData = {};
-let sortedIds = [];
-let currentEditingId = null;
-
-let isControllerMode = false;
-let currentZone = 'grid'; 
-let focusIndex = 0; 
-let headerFocusIndex = 0; 
-
-let lastMoveTime = 0;
-let activeModal = null;
-let modalFocusIndex = 0;
-let kbFocusIndex = 0;
-let isShift = false, isCapsLock = false, lastL3Click = 0;
-let lastButtonState = new Array(20).fill(false);
-let lastActiveGamepadIndex = null; 
-
-let backspaceTimeout = null;
-let backspaceInterval = null;
-let isBackspaceHeld = false;
+const keys = ["1","2","3","4","5","6","7","8","9","0","q","w","e","r","t","y","u","i","o","p","a","s","d","f","g","h","j","k","l","-","z","x","c","v","b","n","m",",",".","_"];
+let gameData = {}, sortedIds = [], currentEditingId = null;
+let isControllerMode = false, currentZone = 'grid', focusIndex = 0, headerFocusIndex = 0; 
+let lastMoveTime = 0, activeModal = null, modalFocusIndex = 0, kbFocusIndex = 0, isShift = false, isCapsLock = false, lastL3Click = 0;
+let lastButtonState = new Array(20).fill(false), lastActiveGamepadIndex = null, backspaceTimeout = null, backspaceInterval = null, isBackspaceHeld = false;
 
 if (fs.existsSync(SAVE_PATH)) {
     try { 
         gameData = JSON.parse(fs.readFileSync(SAVE_PATH)); 
-        Object.keys(gameData).forEach(id => {
-            if (gameData[id].playtime === undefined) gameData[id].playtime = 0;
-            if (gameData[id].lastPlayed === undefined) gameData[id].lastPlayed = 0;
-            if (gameData[id].favorite === undefined) gameData[id].favorite = false;
-        });
+        Object.values(gameData).forEach(d => { d.favorite ??= false; });
     } catch (e) { console.error(e); }
 }
 
-function saveToDisk() { fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2)); }
+const saveToDisk = () => fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2));
 
-function launchItem(id) {
-    const d = gameData[id];
-    if (!d || !d.path) return;
-    playUISound('select');
-    ipcRenderer.send('launch-game-process', { id, executablePath: d.path });
-}
-
-ipcRenderer.on('game-stopped', (e, data) => {
-    if (gameData[data.id]) {
-        gameData[data.id].playtime += data.durationMinutes;
-        gameData[data.id].lastPlayed = data.lastPlayed;
-        saveToDisk();
-        renderLibrary();
+const launchItem = (id) => { 
+    if (gameData[id]?.path) { 
+        playUISound('select'); 
+        
+        gameData[id].lastPlayed = new Date().toISOString(); 
+        saveToDisk(); 
+        
+        renderLibrary(); 
+        
+        ipcRenderer.send('launch-game-process', { id, executablePath: gameData[id].path }); 
     }
-});
+};
 
 function renderLibrary() {
     library.innerHTML = '';
-    let ids = Object.keys(gameData);
-    const searchQuery = librarySearch.value.toLowerCase();
+    const query = librarySearch.value.toLowerCase();
+    let ids = Object.keys(gameData).filter(id => !query || gameData[id].name.toLowerCase().includes(query));
 
-    if (searchQuery) ids = ids.filter(id => gameData[id].name.toLowerCase().includes(searchQuery));
-
-    if (sortSelect.value === 'alpha') ids.sort((a,b) => gameData[a].name.localeCompare(gameData[b].name));
-    else if (sortSelect.value === 'added') ids.sort((a, b) => b.split('-')[1] - a.split('-')[1]);
-    else if (sortSelect.value === 'played') ids.sort((a, b) => gameData[b].playtime - gameData[a].playtime);
-    else if (sortSelect.value === 'last-played') ids.sort((a, b) => gameData[b].lastPlayed - gameData[a].lastPlayed);
-
+    const sortModes = {
+        alpha: (a, b) => gameData[a].name.localeCompare(gameData[b].name),
+        added: (a, b) => b.split('-')[1] - a.split('-')[1],
+        'last-played': (a, b) => new Date(gameData[b].lastPlayed || 0) - new Date(gameData[a].lastPlayed || 0)
+    };
+    
+    if (sortModes[sortSelect.value]) ids.sort(sortModes[sortSelect.value]);
     ids.sort((a, b) => (gameData[b].favorite ? 1 : 0) - (gameData[a].favorite ? 1 : 0));
     sortedIds = ids;
 
-    ids.forEach(id => {
+    ids.forEach((id, i) => {
         const d = gameData[id];
         const card = document.createElement('div');
-        card.className = 'game-card';
+        card.className = `game-card ${d.favorite ? 'is-fav' : ''}`;
         card.id = id;
-        if (d.favorite) card.classList.add('is-fav');
-        
-        if (d.cover && d.cover.length > 0) {
-            const escapedPath = d.cover.replace(/\\/g, '/');
-            card.style.backgroundImage = `url("local-image://${escapedPath}?t=${Date.now()}")`;
-        } else {
-            card.style.backgroundImage = 'none';
-        }
+        if (d.cover) card.style.backgroundImage = `url("local-image://${d.cover.replace(/\\/g, '/')}?t=${Date.now()}")`;
         
         card.onmouseenter = () => { if (!isControllerMode && d.cover) calculateGlow(card, d.cover); };
         card.onmouseleave = () => { if (!isControllerMode) resetGlobalAccent(); };
-        
-        const hours = (d.playtime / 60).toFixed(1);
+        card.onclick = () => launchItem(id);
+        card.oncontextmenu = (e) => { e.preventDefault(); showOptionsModal(id); };
+
         card.innerHTML = `
             <div class="fav-badge">★ FAV</div>
             <div class="info-overlay">
                 <div class="game-title">${d.name}</div>
-                <div class="game-meta">${d.lastPlayed ? `${hours} hrs · Played recently` : `${hours} hrs · Unplayed`}</div>
             </div>`;
-        card.onclick = () => launchItem(id);
-        card.oncontextmenu = (e) => { e.preventDefault(); showOptionsModal(id); };
         library.appendChild(card);
     });
-    if(isControllerMode) applyControllerFocus();
+    if (isControllerMode) applyControllerFocus();
 }
+
+sortSelect.onchange = () => renderLibrary();
 
 function showOptionsModal(id) {
     currentEditingId = id;
@@ -179,14 +119,14 @@ async function calculateGlow(el, p) {
     img.src = `local-image://${p.replace(/\\/g, '/')}`;
     img.onload = () => {
         if (el.matches(':hover') || el.classList.contains('focused')) {
-            canvas.width = 50; canvas.height = 50;
+            canvas.width = canvas.height = 50;
             ctx.drawImage(img, 0, 0, 50, 50);
-            const px = ctx.getImageData(0,0,50,50).data;
-            let r=0, g=0, b=0, c=0;
-            for(let i=0; i<px.length; i+=4){ r+=px[i]; g+=px[i+1]; b+=px[i+2]; c++; }
-            const rAvg = Math.floor(r/c), gAvg = Math.floor(g/c), bAvg = Math.floor(b/c);
-            document.documentElement.style.setProperty('--accent', `rgb(${rAvg}, ${gAvg}, ${bAvg})`);
-            el.style.boxShadow = `0 0 35px 5px rgba(${rAvg}, ${gAvg}, ${bAvg}, 0.6)`;
+            const px = ctx.getImageData(0, 0, 50, 50).data;
+            let r = 0, g = 0, b = 0, c = 0;
+            for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i+1]; b += px[i+2]; c++; }
+            const rA = Math.floor(r/c), gA = Math.floor(g/c), bA = Math.floor(b/c);
+            document.documentElement.style.setProperty('--accent', `rgb(${rA}, ${gA}, ${bA})`);
+            el.style.boxShadow = `0 0 35px 5px rgba(${rA}, ${gA}, ${bA}, 0.6)`;
         }
     };
 }
@@ -195,95 +135,74 @@ function setInputMode(c) {
     if (isControllerMode === c) return;
     isControllerMode = c;
     document.body.classList.toggle('controller-mode', c);
-    
-    const kbContainer = document.getElementById('keyboardContainer');
-    if (c && activeModal === 'edit') kbContainer.classList.add('visible');
-    else kbContainer.classList.remove('visible');
-
-    if(!c) resetGlobalAccent();
-    if(c) applyControllerFocus();
+    document.getElementById('keyboardContainer').classList.toggle('visible', c && activeModal === 'edit');
+    if (!c) resetGlobalAccent();
+    else applyControllerFocus();
 }
 
 window.addEventListener('mousemove', () => setInputMode(false));
-window.addEventListener('keydown', () => { if(activeModal === 'edit') setInputMode(false); });
+window.addEventListener('keydown', (e) => { 
+    if (activeModal === 'edit') return; 
+    setInputMode(false); 
+});
 
 function updateGlyphs(gamepadId) {
-    const id = gamepadId.toLowerCase();
-    const isPS = id.includes('dualshock') || id.includes('dualsense') || id.includes('wireless controller') || id.includes('playstation');
-    
-    const targets = [
-        { 
-            a: '.footer .glyph-item:nth-child(1) .glyph', 
-            x: '.footer .glyph-item:nth-child(2) .glyph', 
-            b: '.footer .glyph-item:nth-child(3) .glyph',
-            y: null 
-        },
-        { 
-            a: '#oskLegend .glyph-item:nth-child(1) .glyph', 
-            x: '#oskLegend .glyph-item:nth-child(2) .glyph', 
-            y: '#oskLegend .glyph-item:nth-child(3) .glyph', 
-            b: '#oskLegend .glyph-item:nth-child(5) .glyph' 
-        }
-    ];
-
-    targets.forEach(set => {
-        const aEl = document.querySelector(set.a);
-        const xEl = document.querySelector(set.x);
-        const bEl = document.querySelector(set.b);
-        const yEl = set.y ? document.querySelector(set.y) : null;
-
-        if (aEl) { aEl.className = 'glyph'; aEl.classList.add(isPS ? 'ps-cross' : 'a'); }
-        if (xEl) { xEl.className = 'glyph'; xEl.classList.add(isPS ? 'ps-square' : 'x'); }
-        if (bEl) { bEl.className = 'glyph'; bEl.classList.add(isPS ? 'ps-circle' : 'b'); }
-        if (yEl) { yEl.className = 'glyph'; yEl.classList.add(isPS ? 'ps-triangle' : 'y'); }
+    const isPS = /dualshock|dualsense|wireless controller|playstation/.test(gamepadId.toLowerCase());
+    const pairs = [['.footer', ''], ['#oskLegend', '']];
+    pairs.forEach(([parent]) => {
+        const pEl = document.querySelector(parent);
+        if (!pEl) return;
+        const glyphs = pEl.querySelectorAll('.glyph');
+        const classes = isPS ? ['ps-cross', 'ps-square', 'ps-circle', 'ps-triangle'] : ['a', 'x', 'b', 'y'];
+        glyphs.forEach((g, idx) => {
+            if (classes[idx]) { g.className = 'glyph'; g.classList.add(classes[idx]); }
+        });
     });
 }
 
 function applyControllerFocus() {
     if (!isControllerMode) return;
-    const kbContainer = document.getElementById('keyboardContainer');
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (activeModal === 'edit') {
-        kbContainer.classList.add('visible');
-        const kElements = document.querySelectorAll('.key');
-        kElements.forEach((k, i) => {
+        document.querySelectorAll('.key').forEach((k, i) => {
             k.classList.toggle('selected', i === kbFocusIndex);
             k.classList.toggle('uppercase', isShift || isCapsLock);
         });
-        document.querySelectorAll('#editModal .menu-btn').forEach((b, i) => b.classList.toggle('selected', i === modalFocusIndex));
-    } else {
-        kbContainer.classList.remove('visible');
-        if (activeModal) {
-            document.querySelectorAll(`#${activeModal}Modal .menu-btn`).forEach((b, i) => b.classList.toggle('selected', i === modalFocusIndex));
-        } else {
-            if (currentZone === 'header') {
-                document.querySelectorAll('.game-card').forEach(c => { c.classList.remove('focused'); c.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)'; });
-                resetGlobalAccent();
-                const targetHeaderItem = document.querySelector(`[data-header-idx="${headerFocusIndex}"]`);
-                if (targetHeaderItem) { targetHeaderItem.classList.add('header-focused'); targetHeaderItem.focus(); }
-            } else {
-                document.getElementById('librarySearch').blur();
-                const cards = document.querySelectorAll('.game-card');
-                cards.forEach((c, i) => {
-                    const isFocused = (i === focusIndex);
-                    c.classList.toggle('focused', isFocused);
-                    if (isFocused) {
-                        c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        const actualId = sortedIds[i];
-                        if (gameData[actualId] && gameData[actualId].cover) calculateGlow(c, gameData[actualId].cover);
-                        else resetGlobalAccent();
-                    } else c.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)';
-                });
-                if(sortedIds.length === 0) resetGlobalAccent();
-            }
-        }
     }
+    if (activeModal) {
+        document.querySelectorAll(`#${activeModal}Modal .menu-btn`).forEach((b, i) => b.classList.toggle('selected', i === modalFocusIndex));
+    } else {
+        document.getElementById('librarySearch').blur();
+        document.querySelectorAll('.game-card').forEach((c, i) => {
+            const isFocused = (i === focusIndex && currentZone === 'grid');
+            c.classList.toggle('focused', isFocused);
+            if (isFocused) {
+                c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (gameData[sortedIds[i]]?.cover) calculateGlow(c, gameData[sortedIds[i]].cover);
+                else resetGlobalAccent();
+            } else c.style.boxShadow = '0 4px 15px rgba(0,0,0,0.5)';
+        });
+        if (currentZone === 'header') {
+            resetGlobalAccent();
+            document.querySelector(`[data-header-idx="${headerFocusIndex}"]`)?.classList.add('header-focused');
+        }
+        if (sortedIds.length === 0) resetGlobalAccent();
+    }
+}
+
+function appendOskChar(char) {
+    const input = document.getElementById('newNameInput');
+    if (!input) return;
+    input.value += (isShift || isCapsLock) ? char.toUpperCase() : char.toLowerCase();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    playUISound('navigate');
+    if (isShift) { isShift = false; applyControllerFocus(); }
 }
 
 function triggerBackspace() {
     const input = document.getElementById('newNameInput');
-    if (input && input.value.length > 0) {
+    if (input?.value.length > 0) {
         input.value = input.value.slice(0, -1);
         input.dispatchEvent(new Event('input', { bubbles: true }));
         playUISound('navigate');
@@ -292,26 +211,21 @@ function triggerBackspace() {
 
 function clearBackspaceTimers() {
     isBackspaceHeld = false;
-    if (backspaceTimeout) { clearTimeout(backspaceTimeout); backspaceTimeout = null; }
-    if (backspaceInterval) { clearInterval(backspaceInterval); backspaceInterval = null; }
+    clearTimeout(backspaceTimeout); clearInterval(backspaceInterval);
 }
 
 function updateGamepad() {
     if (!document.hasFocus()) { requestAnimationFrame(updateGamepad); return; }
     const gamepads = navigator.getGamepads();
     const now = Date.now();
-    let activeGp = null;
+    let activeGp = Array.from(gamepads).find(gp => gp?.connected && (gp.buttons.some(b => b.pressed) || gp.axes.some(a => Math.abs(a) > 0.5)));
 
-    for (const gp of gamepads) {
-        if (!gp || !gp.connected) continue;
-        if (gp.buttons.some(b => b.pressed) || gp.axes.some(a => Math.abs(a) > 0.5)) {
-            activeGp = gp; setInputMode(true);
-            if (lastActiveGamepadIndex !== gp.index) { lastActiveGamepadIndex = gp.index; updateGlyphs(gp.id); }
-            break; 
-        }
+    if (activeGp) {
+        setInputMode(true);
+        if (lastActiveGamepadIndex !== activeGp.index) { lastActiveGamepadIndex = activeGp.index; updateGlyphs(activeGp.id); }
+    } else if (isControllerMode) {
+        activeGp = gamepads[lastActiveGamepadIndex] || Array.from(gamepads).find(p => p !== null);
     }
-
-    if (!activeGp && isControllerMode) activeGp = gamepads[lastActiveGamepadIndex] || Array.from(gamepads).find(p => p !== null);
 
     if (activeGp && isControllerMode) {
         if (now - lastMoveTime > 180) {
@@ -340,264 +254,153 @@ function updateGamepad() {
                 } else {
                     const cols = Math.floor(library.offsetWidth / 200) || 5;
                     if (right) { focusIndex++; moved = true; }
-                    if (left) { if (focusIndex > 0) { focusIndex--; moved = true; } }
-                    if (down) { if (focusIndex + cols < sortedIds.length) { focusIndex += cols; moved = true; } }
+                    if (left && focusIndex > 0) { focusIndex--; moved = true; }
+                    if (down && focusIndex + cols < sortedIds.length) { focusIndex += cols; moved = true; }
                     if (up) { 
-                        if (focusIndex < cols) { currentZone = 'header'; headerFocusIndex = 0; moved = true; } 
-                        else { focusIndex -= cols; moved = true; } 
+                        if (focusIndex < cols) { currentZone = 'header'; headerFocusIndex = 0; } 
+                        else { focusIndex -= cols; }
+                        moved = true;
                     }
-                    if(sortedIds.length > 0) focusIndex = Math.max(0, Math.min(focusIndex, sortedIds.length - 1));
+                    if (sortedIds.length > 0) focusIndex = Math.max(0, Math.min(focusIndex, sortedIds.length - 1));
                 }
             }
-            if (moved) { 
-                applyControllerFocus(); 
-                playUISound('navigate'); 
-                lastMoveTime = now; 
-            }
+            if (moved) { applyControllerFocus(); playUISound('navigate'); lastMoveTime = now; }
         }
 
         if (activeGp.buttons[0].pressed && !lastButtonState[0]) handleA();
         if (activeGp.buttons[1].pressed && !lastButtonState[1]) handleB();
         
         if (activeGp.buttons[2].pressed) {
-            if (activeModal === 'edit') {
-                if (!isBackspaceHeld) {
-                    isBackspaceHeld = true;
-                    triggerBackspace(); 
-                    
-                    backspaceTimeout = setTimeout(() => {
-                        backspaceInterval = setInterval(() => {
-                            triggerBackspace();
-                        }, 40); 
-                    }, 500); 
-                }
-            } else if (!lastButtonState[2]) {
-                handleX();
-            }
-        } else {
-            if (isBackspaceHeld) clearBackspaceTimers();
-        }
+            if (activeModal === 'edit' && !isBackspaceHeld) {
+                isBackspaceHeld = true; triggerBackspace(); 
+                backspaceTimeout = setTimeout(() => { backspaceInterval = setInterval(triggerBackspace, 40); }, 500); 
+            } else if (activeModal !== 'edit' && !lastButtonState[2]) handleX();
+        } else if (isBackspaceHeld) clearBackspaceTimers();
         
-        if (activeGp.buttons[3].pressed && !lastButtonState[3]) {
-            if (activeModal === 'edit') {
-                const input = document.getElementById('newNameInput');
-                input.value += " ";
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                playUISound('navigate');
-            }
-        }
-
-        if (activeGp.buttons[7].pressed && !lastButtonState[7]) {
-            if (activeModal === 'edit') executeAction('save-name');
-        }
+        if (activeGp.buttons[3].pressed && !lastButtonState[3] && activeModal === 'edit') appendOskChar(" ");
+        if (activeGp.buttons[7].pressed && !lastButtonState[7] && activeModal === 'edit') executeAction('save-name');
         
         if (activeGp.buttons[8].pressed && !lastButtonState[8] && !activeModal) {
-            currentZone = (currentZone === 'grid') ? 'header' : 'grid'; 
-            applyControllerFocus();
-            playUISound('navigate');
+            currentZone = (currentZone === 'grid') ? 'header' : 'grid'; applyControllerFocus(); playUISound('navigate');
         }
         if (activeGp.buttons[10].pressed && !lastButtonState[10] && activeModal === 'edit') {
             if (now - lastL3Click < 300) { isCapsLock = !isCapsLock; isShift = false; } 
             else { isShift = !isShift; if (isShift) isCapsLock = false; }
             lastL3Click = now;
-            
-            const labelText = isCapsLock ? "Caps Lock" : "Shift";
-            document.getElementById('oskShiftLabel').innerText = labelText;
-            applyControllerFocus();
-            playUISound('navigate');
+            document.getElementById('oskShiftLabel').innerText = isCapsLock ? "Caps Lock" : "Shift";
+            applyControllerFocus(); playUISound('navigate');
         }
 
-        for (let i = 0; i < activeGp.buttons.length; i++) {
-            if (i === 2 && activeModal === 'edit') continue; 
-            if (i === 7 && activeModal === 'edit') continue; 
-            lastButtonState[i] = activeGp.buttons[i].pressed;
-        }
-        if (activeModal !== 'edit') {
-            if (lastButtonState[2] !== activeGp.buttons[2].pressed) lastButtonState[2] = activeGp.buttons[2].pressed;
-            if (lastButtonState[7] !== activeGp.buttons[7].pressed) lastButtonState[7] = activeGp.buttons[7].pressed;
-        }
+        activeGp.buttons.forEach((b, i) => {
+            if (!(activeModal === 'edit' && (i === 2 || i === 7))) lastButtonState[i] = b.pressed;
+        });
     }
     requestAnimationFrame(updateGamepad);
 }
 
 function handleA() {
-    if (activeModal === 'edit') {
-        const k = keys[kbFocusIndex];
-        const input = document.getElementById('newNameInput');
-        input.value += (isShift || isCapsLock) ? k.toUpperCase() : k.toLowerCase();
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        playUISound('navigate'); 
-        if (isShift) { isShift = false; applyControllerFocus(); } 
-    } else if (activeModal) {
+    if (activeModal === 'edit') appendOskChar(keys[kbFocusIndex]);
+    else if (activeModal) {
         const btns = document.querySelectorAll(`#${activeModal}Modal .menu-btn`);
-        if(btns[modalFocusIndex]) executeAction(btns[modalFocusIndex].dataset.action);
-    } else {
-        if (currentZone === 'header') {
-            playUISound('select');
-            if (headerFocusIndex === 0) {
-                currentEditingId = 'search-filter'; closeModal();
-                setTimeout(() => { document.getElementById('newNameInput').value = librarySearch.value; openModal('edit'); }, 50);
-            } else if (headerFocusIndex === 1) {
-                const currIdx = sortSelect.selectedIndex;
-                sortSelect.selectedIndex = (currIdx + 1) % sortSelect.options.length;
-                sortSelect.dispatchEvent(new Event('change'));
-            } else if (headerFocusIndex === 2) document.getElementById('addBtn').click();
-        } else {
-            const actualId = sortedIds[focusIndex];
-            if (actualId) launchItem(actualId);
-        }
-    }
+        if (btns[modalFocusIndex]) executeAction(btns[modalFocusIndex].dataset.action);
+    } else if (currentZone === 'header') {
+        playUISound('select');
+        if (headerFocusIndex === 0) {
+            currentEditingId = 'search-filter'; closeModal();
+            setTimeout(() => { document.getElementById('newNameInput').value = librarySearch.value; openModal('edit'); }, 50);
+        } else if (headerFocusIndex === 1) {
+            sortSelect.selectedIndex = (sortSelect.selectedIndex + 1) % sortSelect.options.length;
+            renderLibrary();
+        } else if (headerFocusIndex === 2) document.getElementById('addBtn').click();
+    } else if (sortedIds[focusIndex]) launchItem(sortedIds[focusIndex]);
 }
 
 async function executeAction(action) {
     playUISound('select');
-    if (action === 'toggle-fav') {
-        gameData[currentEditingId].favorite = !gameData[currentEditingId].favorite; saveToDisk(); renderLibrary(); closeModal();
-    } else if (action === 'rename') {
-        const old = gameData[currentEditingId].name; closeModal();
-        setTimeout(() => { document.getElementById('newNameInput').value = old; openModal('edit'); }, 50);
-    } else if (action === 'cover') { 
-        closeModal(); ipcRenderer.send('open-picker', { id: currentEditingId, name: gameData[currentEditingId].name });
-    } else if (action === 'open-folder') {
-        ipcRenderer.send('open-file-location', gameData[currentEditingId].path); closeModal();
-    } else if (action === 'change-path') {
-        const p = await ipcRenderer.invoke('select-game');
-        if (p) { gameData[currentEditingId].path = p; saveToDisk(); }
-        closeModal();
-    } else if (action === 'remove') { 
-        // --- FIXED: Added cleanup logic before deleting the game entry ---
-        const d = gameData[currentEditingId];
-        if (d && d.cover) {
-            ipcRenderer.send('delete-cover-file', d.cover);
-        }
-        delete gameData[currentEditingId]; 
-        saveToDisk(); 
-        renderLibrary(); 
-        closeModal();
-    } else if (action === 'save-name') { 
-        const val = document.getElementById('newNameInput').value;
-        if (currentEditingId === 'search-filter') { librarySearch.value = val; renderLibrary(); } 
-        else { gameData[currentEditingId].name = val; saveToDisk(); renderLibrary(); }
-        closeModal();
-    } else if (action === 'quit-confirm') ipcRenderer.send('quit-app-now');
-    else closeModal();
+    const actions = {
+        'toggle-fav': () => { gameData[currentEditingId].favorite = !gameData[currentEditingId].favorite; saveToDisk(); renderLibrary(); closeModal(); },
+        'rename': () => { const old = gameData[currentEditingId].name; closeModal(); setTimeout(() => { document.getElementById('newNameInput').value = old; openModal('edit'); }, 50); },
+        'cover': () => { closeModal(); ipcRenderer.send('open-picker', { id: currentEditingId, name: gameData[currentEditingId].name }); },
+        'open-folder': () => { ipcRenderer.send('open-file-location', gameData[currentEditingId].path); closeModal(); },
+        'change-path': async () => { const p = await ipcRenderer.invoke('select-game'); if (p) { gameData[currentEditingId].path = p; saveToDisk(); } closeModal(); },
+        'remove': () => { if (gameData[currentEditingId]?.cover) ipcRenderer.send('delete-cover-file', gameData[currentEditingId].cover); delete gameData[currentEditingId]; saveToDisk(); renderLibrary(); closeModal(); },
+        'save-name': () => { 
+            const val = document.getElementById('newNameInput').value; 
+            if (currentEditingId !== 'search-filter') { gameData[currentEditingId].name = val; saveToDisk(); }
+            renderLibrary(); closeModal(); 
+        },
+        'quit-confirm': () => ipcRenderer.send('quit-app-now')
+    };
+    if (actions[action]) await actions[action](); else closeModal();
 }
 
-function handleB() { 
-    if (activeModal) {
-        playUISound('back');
-        closeModal(); 
-    } else { 
-        if(currentZone === 'header') { 
-            currentZone = 'grid'; 
-            applyControllerFocus(); 
-            playUISound('back');
-        } else {
-            playUISound('select');
-            openModal('quit');
-        }
-    } 
+function handleB() {
+    playUISound(activeModal ? 'back' : (currentZone === 'header' ? 'back' : 'select'));
+    if (activeModal) closeModal();
+    else if (currentZone === 'header') { currentZone = 'grid'; applyControllerFocus(); }
+    else openModal('quit');
 }
 
 function handleX() {
-    if (currentZone === 'header') return;
-    const actualId = sortedIds[focusIndex];
-    if (actualId && !activeModal) {
-        playUISound('select');
-        showOptionsModal(actualId);
-    }
+    if (currentZone !== 'header' && sortedIds[focusIndex] && !activeModal) { playUISound('select'); showOptionsModal(sortedIds[focusIndex]); }
 }
 
 function openModal(t) { 
     activeModal = t; modalFocusIndex = 0; 
-    document.getElementById(t + 'Modal').style.display = 'flex'; 
+    document.getElementById(`${t}Modal`).style.display = 'flex'; 
     if (t === 'edit') { 
         document.getElementById('newNameInput').removeAttribute('readonly'); 
         document.getElementById('newNameInput').focus(); 
     }
+    document.getElementById('keyboardContainer').classList.toggle('visible', isControllerMode && t === 'edit');
     applyControllerFocus(); 
 }
 
 function closeModal() { 
     clearBackspaceTimers();
-    if (activeModal) document.getElementById(activeModal + 'Modal').style.display = 'none';
+    if (activeModal) document.getElementById(`${activeModal}Modal`).style.display = 'none';
     if (activeModal === 'edit') document.getElementById('newNameInput').setAttribute('readonly', true);
     document.getElementById('keyboardContainer').classList.remove('visible');
-    activeModal = null; isShift = false; isCapsLock = false;
+    activeModal = null; isShift = isCapsLock = false;
     applyControllerFocus(); 
 }
 
-document.querySelectorAll('.menu-btn').forEach(btn => {
-    btn.onclick = () => executeAction(btn.dataset.action);
-});
-
-function initKeyboard() {
-    const kbContainer = document.getElementById('virtualKeyboard');
-    if (!kbContainer) return;
-    kbContainer.innerHTML = '';
-    
-    keys.forEach((key) => {
-        const keyEl = document.createElement('div');
-        keyEl.className = 'key';
-        keyEl.innerText = key;
-        
-        keyEl.onclick = () => {
-            const input = document.getElementById('newNameInput');
-            input.value += (isShift || isCapsLock) ? key.toUpperCase() : key.toLowerCase();
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            playUISound('navigate');
-            if (isShift) { isShift = false; applyControllerFocus(); }
-        };
-        
-        kbContainer.appendChild(keyEl);
-    });
-}
+document.querySelectorAll('.menu-btn').forEach(btn => btn.onclick = () => executeAction(btn.dataset.action));
 
 document.addEventListener('DOMContentLoaded', () => {
-    initKeyboard();
-    renderLibrary();
-    requestAnimationFrame(updateGamepad);
-
-    const addBtn = document.getElementById('addBtn');
-    if (addBtn) {
-        addBtn.addEventListener('click', () => {
-            console.log("Add Game clicked - sending IPC");
-            ipcRenderer.send('add-game-requested');
+    const kbContainer = document.getElementById('virtualKeyboard');
+    if (kbContainer) {
+        kbContainer.innerHTML = '';
+        keys.forEach(key => {
+            const keyEl = document.createElement('div');
+            keyEl.className = 'key'; keyEl.innerText = key;
+            keyEl.onclick = () => appendOskChar(key);
+            kbContainer.appendChild(keyEl);
         });
     }
-});
 
-// --- IPC LISTENERS ---
-
-ipcRenderer.on('add-game-confirmed', (event, filePath) => {
-    const fileName = path.basename(filePath, path.extname(filePath));
-    const newId = 'game-' + Date.now();
-
-    gameData[newId] = {
-        name: fileName,
-        path: filePath,
-        playtime: 0,
-        lastPlayed: 0,
-        favorite: false,
-        cover: ''
-    };
-
-    saveToDisk();
-    renderLibrary();
-    console.log("New game added to library:", fileName);
-});
-
-// --- FIXED: Instant DOM update listener for new covers ---
-ipcRenderer.on('cover-updated', (event, { id, path }) => {
-    if (gameData[id]) {
-        gameData[id].cover = path;
-        saveToDisk();
-        
-        // Target the specific card and update its background instantly with a cache buster
-        const card = document.getElementById(id);
-        if (card) {
-            const escapedPath = path.replace(/\\/g, '/');
-            card.style.backgroundImage = `url("local-image://${escapedPath}?t=${Date.now()}")`;
+    document.getElementById('librarySearch')?.addEventListener('input', () => renderLibrary());
+    document.getElementById('newNameInput')?.addEventListener('input', () => {
+        if (currentEditingId === 'search-filter') {
+            librarySearch.value = document.getElementById('newNameInput').value;
+            renderLibrary();
         }
+    });
+
+    renderLibrary();
+    requestAnimationFrame(updateGamepad);
+    document.getElementById('addBtn')?.addEventListener('click', () => ipcRenderer.send('add-game-requested'));
+});
+
+ipcRenderer.on('add-game-confirmed', (e, filePath) => {
+    gameData['game-' + Date.now()] = { name: path.basename(filePath, path.extname(filePath)), path: filePath, favorite: false, cover: '' };
+    saveToDisk(); renderLibrary();
+});
+
+ipcRenderer.on('cover-updated', (e, { id, path }) => {
+    if (gameData[id]) {
+        gameData[id].cover = path; saveToDisk();
+        const card = document.getElementById(id);
+        if (card) card.style.backgroundImage = `url("local-image://${path.replace(/\\/g, '/')}?t=${Date.now()}")`;
     }
 });
