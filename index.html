@@ -4,142 +4,91 @@
     <meta charset="UTF-8">
     <title>HB Launcher</title>
     <style>
-        :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; }
+        :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; --running-color: #2ec4b6; }
         * { box-sizing: border-box; outline: none; }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow-x: hidden; transition: padding-bottom 0.3s; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow: hidden; height: 100vh; transition: padding-bottom 0.3s; display: flex; flex-direction: column; }
         body.controller-mode { padding-bottom: 8rem; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #2a2a2a; padding-bottom: 1rem; }
+        /* HEADER */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: #141414; border: 1px solid #222; flex-shrink: 0; }
         .controls { display: flex; gap: 1rem; align-items: center; }
+        select, #librarySearch, .control-btn { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
+        select:hover, #librarySearch:hover, .control-btn:hover { border-color: #555; }
+        body.controller-mode .header-focused { border-color: var(--accent) !important; transform: scale(1.03); background: #252525; }
+
+        /* VIEW MODES CONTAINER */
+        .content-wrapper { display: flex; gap: 20px; flex: 1; overflow: hidden; transition: all 0.3s ease; }
+
+        /* GRID VIEW LAYOUT */
+        .content-wrapper.grid-mode #library { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; width: 100%; overflow-y: auto; padding-right: 10px; align-content: start; }
+        .content-wrapper.grid-mode #detail-panel { display: none; }
+        .content-wrapper.grid-mode .game-card { aspect-ratio: 2/3; flex-direction: column; justify-content: flex-end; clip-path: inset(0% 0% 0% 0% round 12px); }
+
+        /* LIST VIEW LAYOUT */
+        .content-wrapper.list-mode #library { width: 300px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 10px; flex-shrink: 0; }
+        .content-wrapper.list-mode .game-card { height: 60px; flex-direction: row; align-items: center; justify-content: flex-start; padding: 8px; border-radius: 8px; gap: 12px; }
+        .content-wrapper.list-mode .game-card.list-selected { background: rgba(255, 255, 255, 0.1); border-color: var(--accent) !important; }
+        .content-wrapper.list-mode .info-overlay, .content-wrapper.list-mode .fallback-title { display: none !important; }
         
-        select, #librarySearch, .add-btn { 
-            background: #1a1a1a; color: white; border: 1px solid #333; padding: 8px 12px; 
-            border-radius: 6px; cursor: pointer; transition: border-color 0.2s, transform 0.2s; 
-        }
-        select:hover, #librarySearch:hover, .add-btn:hover { border-color: #555; }
-        body.controller-mode .header-focused { border-color: var(--accent) !important; transform: scale(1.03); background: #222; }
+        .list-thumb { width: 44px; height: 44px; background: #333 center/cover no-repeat; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+        .list-title { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 
-        #library { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
-
-        .game-card { 
-            width: 100%; aspect-ratio: 2/3; background: var(--card-bg) center/cover no-repeat; 
-            border-radius: 12px; display: flex; align-items: flex-end; cursor: pointer; 
-            border: 2px solid transparent; 
-            position: relative; 
-            z-index: 2;
-            
-            clip-path: inset(0% 0% 0% 0% round 12px); 
-            
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s, box-shadow 0.25s ease; 
-        }
+        /* CARDS */
+        .game-card { width: 100%; background: var(--card-bg) center/cover no-repeat; display: flex; cursor: pointer; border: 1px solid #252525; position: relative; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.2s, box-shadow 0.25s ease; }
+        body.controller-mode .game-card.focused { transform: scale(1.05); border-color: var(--accent) !important; z-index: 10; box-shadow: 0 0 15px rgba(0, 120, 212, 0.4); }
+        .game-card:hover { transform: scale(1.02); z-index: 5; }
+        .game-card.is-running { border-color: var(--running-color) !important; opacity: 0.7; }
         
-        body.controller-mode .game-card.focused { transform: scale(1.08); border-color: var(--accent) !important; z-index: 10; }
-        .game-card:hover { transform: scale(1.03); z-index: 5; }
-
-        .fav-badge {
-            position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.75);
-            color: #ffb703; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem;
-            font-weight: bold; border: 1px solid #ffb703; z-index: 5; display: none;
-        }
+        .fallback-title { position: absolute; inset: 15px; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 700; font-size: 1rem; color: #777; border: 2px dashed #333; border-radius: 8px; }
+        .fav-badge { position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); color: #ffb703; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; border: 1px solid #ffb703; z-index: 5; display: none; }
         .game-card.is-fav .fav-badge { display: block; }
-
-        .info-overlay { 
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%; 
-            background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, rgba(0,0,0,0.4) 100%); 
-            padding: 0.7rem 1rem; 
-            text-align: center; 
-
-            transform: translateY(101%); 
-
-            border-bottom-left-radius: 12px; 
-            border-bottom-right-radius: 12px;
-            z-index: 3;
-            transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-        }
-
-        .game-card:hover .info-overlay, 
-        body.controller-mode .game-card.focused .info-overlay { 
-            transform: translateY(0) !important; 
-        }
-
-        .game-title { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .game-meta { font-size: 0.7rem; color: #aaa; margin-top: 2px; }
-
-        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
-        .modal-content { background: #161616; padding: 2.5rem; border-radius: 20px; width: 95%; max-width: 680px; border: 1px solid #2d2d2d; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
-        .menu-options { display: flex; flex-direction: column; gap: 12px; margin-top: 25px; }
-        .menu-btn { background: #222; border: 2px solid transparent; color: white; padding: 14px; border-radius: 12px; cursor: pointer; text-align: left; font-weight: 600; transition: 0.2s; }
-        .menu-btn.selected, .menu-btn:hover { border-color: var(--accent); background: #2a2a2a; transform: scale(1.02); }
-
-        .keyboard-container { 
-            max-height: 0; opacity: 0; overflow: hidden; margin-top: 0;
-            background: #0d0d0d; border: 1px solid transparent; padding: 0 15px; border-radius: 14px; 
-            transition: max-height 0.4s cubic-bezier(0.075, 0.82, 0.165, 1), opacity 0.3s ease, margin-top 0.3s ease, padding 0.3s ease; 
-        }
-        body.controller-mode .keyboard-container.visible { 
-            max-height: 450px; opacity: 1; margin-top: 20px; padding: 15px; border-color: #222;
-        }
         
-        .keyboard-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
-        .key { 
-            background: #1a1a1a; padding: 14px 5px; border-radius: 8px; font-size: 1rem; 
-            font-weight: 600; border: 2px solid transparent; text-transform: lowercase; 
-            cursor: pointer; color: #eee; transition: all 0.15s ease;
-        }
-        .key.uppercase { text-transform: uppercase; }
-        .key.selected { border-color: var(--accent); background: #252525; transform: scale(1.05); color: #fff; box-shadow: 0 0 15px rgba(0, 120, 212, 0.3); }
+        .info-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent); padding: 0.7rem 1rem; text-align: center; transform: translateY(101%); z-index: 3; transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1); }
+        .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0) !important; }
 
-        .osk-legend-ui { 
-            display: none; justify-content: center; flex-wrap: wrap; gap: 1.5rem; 
-            margin-top: 15px; padding: 10px; background: #111; border-radius: 8px; border: 1px solid #222;
-        }
-        body.controller-mode .osk-legend-ui { display: flex; }
+        /* DETAIL PANEL */
+        #detail-panel { flex: 1; background: #111; border-radius: 12px; border: 1px solid #222; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .dp-hero { height: 350px; background: #1a1a1a center/cover no-repeat; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: background-image 0.3s ease; }
+        .dp-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, #111 0%, transparent 60%, rgba(0,0,0,0.4) 100%); }
+        .dp-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; }
+        .dp-title { font-size: 3rem; margin: 0 0 10px 0; text-shadow: 0 4px 10px rgba(0,0,0,0.8); }
+        .dp-play-btn { background: var(--accent); color: white; border: none; padding: 15px 40px; font-size: 1.2rem; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 120, 212, 0.4); transition: 0.2s; border: 2px solid transparent; }
+        .dp-play-btn:hover, body.controller-mode .dp-play-btn.focused { transform: scale(1.05); background: #108bed; border-color: white; }
+        .dp-info { padding: 2rem; display: flex; flex-direction: column; gap: 10px; color: #aaa; }
+        .dp-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 1.2rem; font-weight: bold; }
 
-        .footer { 
-            position: fixed; bottom: -120px; left: 0; right: 0; background: rgba(10,10,10,0.98); 
-            padding: 1.2rem 2.5rem; display: flex; gap: 3rem; border-top: 1px solid #333; z-index: 1000; transition: bottom 0.4s; 
-        }
+        /* MODALS */
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+        .modal-content { padding: 2.5rem; border-radius: 20px; width: 95%; max-width: 500px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8); background: #141414; border: 1px solid #222; }
+        .menu-options { display: flex; flex-direction: column; gap: 12px; margin-top: 25px; }
+        .menu-btn { background: #1e1e1e; border: 2px solid transparent; color: white; padding: 14px; border-radius: 12px; cursor: pointer; text-align: left; font-weight: 600; transition: 0.2s; }
+        .menu-btn.focused, .menu-btn:hover { border-color: var(--accent); background: #252525; transform: scale(1.01); }
+        
+        #renameInput { width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.2rem; text-align: center; margin-bottom: 20px; transition: border-color 0.2s; }
+        #renameInput.focused { border-color: var(--accent); }
+
+        /* CONTROLLER FOOTER & GLYPH MATRIX */
+        .footer { position: fixed; bottom: -120px; left: 0; right: 0; background: rgba(10,10,10,0.98); border-top: 1px solid #333; padding: 1.2rem 2.5rem; display: flex; gap: 3rem; z-index: 1000; transition: bottom 0.4s; }
         body.controller-mode .footer { bottom: 0; }
         .glyph-item { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 600; color: #fff; }
         
-        .glyph { 
-            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; 
-            border: 2px solid transparent; transition: all 0.1s; flex-shrink: 0;
-            background: #ffffff; color: #0a0a0a; border-radius: 50%; position: relative;
-        }
+        .glyph { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 2px solid transparent; transition: all 0.1s; flex-shrink: 0; background: #ffffff; color: #0a0a0a; border-radius: 50%; position: relative; }
 
-        .glyph.a::after, .glyph.b::after, .glyph.x::after, .glyph.y::after { display: block; line-height: 1; text-align: center; font-weight: 500; font-size: 18px; }
-        .glyph.a::after { content: "A"; }
-        .glyph.b::after { content: "B"; }
-        .glyph.x::after { content: "X"; }
-        .glyph.y::after { content: "Y"; }
-
-        .glyph.ps-cross::before, .glyph.ps-cross::after { content: ""; position: absolute; width: 20px; height: 2.5px; background: #0a0a0a; border-radius: 2px; }
+        /* CSS Pseudo-Element Layout for Native-Looking Glyphs */
+        .glyph.a::after, .glyph.b::after, .glyph.x::after, .glyph.y::after { display: block; line-height: 1; text-align: center; font-weight: 700; font-size: 16px; }
+        .glyph.a:not(.ps-cross)::after { content: "A"; }
+        .glyph.b:not(.ps-circle)::after { content: "B"; }
+        .glyph.x:not(.ps-square)::after { content: "X"; }
+        
+        .glyph.ps-cross::before, .glyph.ps-cross::after { content: ""; position: absolute; width: 16px; height: 2.5px; background: #0a0a0a; border-radius: 2px; }
         .glyph.ps-cross::before { transform: rotate(45deg); }
         .glyph.ps-cross::after { transform: rotate(-45deg); }
         .glyph.ps-circle::after { content: ""; width: 14px; height: 14px; border: 2.5px solid #0a0a0a; border-radius: 50%; }
         .glyph.ps-square::after { content: ""; width: 13px; height: 13px; border: 2.5px solid #0a0a0a; border-radius: 2px; }
-        
-        .glyph.ps-triangle::after { 
-            content: ""; position: absolute; top: 8px; width: 16px; height: 14px; background: #0a0a0a; clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-        }
-        .glyph.ps-triangle::before {
-            content: ""; position: absolute; top: 11px; z-index: 1; width: 10px; height: 9px; background: #ffffff; clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-        }
-
-        .glyph.ls { background: #555; border-radius: 50%; font-size: 0.7rem; color: white; }
-        .glyph.ls::after { content: "L3"; font-weight: 900; }
-
-        #newNameInput { width: 100%; padding: 1.2rem; background: #000; color: white; border: 1px solid #444; border-radius: 12px; font-size: 1.1rem; text-align: center; }
-        #librarySearch { width: 250px; text-align: left; }
-        #colorCanvas { display: none; }
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="header" id="appHeader">
         <h1>LIBRARY</h1>
         <div class="controls">
             <input type="text" id="librarySearch" placeholder="Search games..." data-header-idx="0">
@@ -148,19 +97,38 @@
                 <option value="added">Recently Added</option>
                 <option value="last-played">Last Played</option>
             </select>
-            <button class="add-btn" id="addBtn" data-header-idx="2">+ Add Game</button>
+            <button class="control-btn" id="viewToggleBtn" data-header-idx="2">🔲 Grid View</button>
+            <button class="control-btn" id="addBtn" data-header-idx="3">+ Add Game</button>
         </div>
     </div>
-    <div id="library"></div>
+
+    <div class="content-wrapper grid-mode" id="contentWrapper">
+        <div id="library"></div>
+        
+        <div id="detail-panel">
+            <div id="dp-empty-state" class="dp-empty">Select a game from the list</div>
+            <div id="dp-content-state" style="display: none; height: 100%; flex-direction: column;">
+                <div class="dp-hero" id="dpHero">
+                    <div class="dp-content">
+                        <h1 class="dp-title" id="dpTitle">Game Name</h1>
+                        <button class="dp-play-btn" id="dpPlayBtn">PLAY</button>
+                    </div>
+                </div>
+                <div class="dp-info">
+                    <div><strong>Last Played:</strong> <span id="dpLastPlayed">Never</span></div>
+                    <div><strong>Path:</strong> <span id="dpPath">C:/...</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="contextModal" class="modal">
         <div class="modal-content">
             <h2 id="contextGameName" style="color:var(--accent); margin-top:0;">Options</h2>
-            <div class="menu-options">
+            <div class="menu-options" id="contextOptionsList">
                 <div class="menu-btn" data-action="toggle-fav" id="favMenuBtn">Favorite</div>
                 <div class="menu-btn" data-action="rename">Rename Game</div>
-                <div class="menu-btn" data-action="cover">Search Cover Online</div>
-                <div class="menu-btn" data-action="open-folder">Open File Location</div>
+                <div class="menu-btn" data-action="open-customize">Customize...</div>
                 <div class="menu-btn" data-action="change-path">Change Game Path</div>
                 <div class="menu-btn" data-action="remove">Remove from Library</div>
                 <div class="menu-btn" data-action="cancel">Cancel</div>
@@ -168,45 +136,35 @@
         </div>
     </div>
 
-    <div id="editModal" class="modal">
+    <div id="customizeModal" class="modal">
         <div class="modal-content">
-            <input type="text" id="newNameInput">
-            <div class="keyboard-container" id="keyboardContainer">
-                <div class="keyboard-grid" id="virtualKeyboard"></div>
-                
-                <div class="osk-legend-ui" id="oskLegend">
-                    <div class="glyph-item"><div class="glyph a" id="oskTypeGlyph"></div> <span>Type</span></div>
-                    <div class="glyph-item"><div class="glyph x" id="oskBackGlyph"></div> <span>Backspace</span></div>
-                    <div class="glyph-item"><div class="glyph y" id="oskSpaceGlyph"></div> <span>Space</span></div>
-                    <div class="glyph-item"><div class="glyph ls"></div> <span id="oskShiftLabel">Shift</span></div>
-                    <div class="glyph-item"><div class="glyph b" id="oskCancelGlyph"></div> <span>Cancel</span></div>
-                    <p>Use R2/RT to Save</p>
-                </div>
-            </div>
-            <div class="menu-options" style="flex-direction:row; gap:10px; margin-top:20px;">
-                <div class="menu-btn selected" data-action="save-name" style="flex:1; text-align:center">Save</div>
-                <div class="menu-btn" data-action="cancel-edit" style="flex:1; text-align:center">Cancel</div>
+            <h2 style="color:var(--accent); margin-top:0;">Customize Assets</h2>
+            <div class="menu-options" id="customizeOptionsList">
+                <div class="menu-btn" data-action="cover">Change Cover</div>
+                <div class="menu-btn" data-action="icon">Change Icon</div>
+                <div class="menu-btn" data-action="background">Change Background</div>
+                <div class="menu-btn" data-action="back-to-main" style="border-top: 1px solid #333; margin-top: 5px;">⬅ Back</div>
             </div>
         </div>
     </div>
 
-    <div id="quitModal" class="modal">
-        <div class="modal-content">
-            <h2>Exit Launcher?</h2>
-            <div class="menu-options">
-                <div class="menu-btn selected" data-action="quit-confirm">Quit</div>
-                <div class="menu-btn" data-action="quit-cancel">Cancel</div>
+    <div id="renameModal" class="modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <h2 style="color:var(--accent); margin-top:0;">Rename Game</h2>
+            <input type="text" id="renameInput">
+            <div style="display: flex; gap: 12px;" id="renameActionsRow">
+                <button class="menu-btn" id="confirmRenameBtn" style="flex: 1; text-align: center;" data-rename-idx="0">Save</button>
+                <button class="menu-btn" id="cancelRenameBtn" style="flex: 1; text-align: center;" data-rename-idx="1">Cancel</button>
             </div>
         </div>
     </div>
 
     <div class="footer">
-        <div class="glyph-item"><div class="glyph a" id="footerAGlyph"></div> <span id="aLabel">Select</span></div>
-        <div class="glyph-item"><div class="glyph x" id="footerXGlyph"></div> <span id="xLabel">Options</span></div>
-        <div class="glyph-item"><div class="glyph b" id="footerBGlyph"></div> <span id="bLabel">Back</span></div>
+        <div class="glyph-item"><div id="footerAGlyph" class="glyph a"></div> <span id="aLabel">Select/Play</span></div>
+        <div class="glyph-item"><div id="footerXGlyph" class="glyph x"></div> <span id="xLabel">Options</span></div>
+        <div class="glyph-item"><div id="footerBGlyph" class="glyph b"></div> <span id="bLabel">Back</span></div>
     </div>
 
-    <canvas id="colorCanvas"></canvas>
     <script src="renderer.js"></script>
 </body>
 </html>

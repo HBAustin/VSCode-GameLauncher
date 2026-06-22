@@ -1,26 +1,31 @@
 {
-  "game-1776196673533": {
-    "name": "Martio Kart",
-    "path": "D:\\Downloads\\steam icons\\WheelWizardWindows.exe",
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1776196673533.jpg",
-    "lastPlayed": "2026-05-20T10:43:58.337Z",
-    "playtime": 0,
-    "favorite": false
-  },
-  "game-1779181651404543": {
+  "steam-bj7rq602c": {
     "name": "Half-Life 2",
     "path": "D:\\SteamLibrary\\steamapps\\common\\Half-Life 2\\hl2.exe",
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1779181651404543.jpg",
-    "playtime": 0,
-    "lastPlayed": "2026-05-20T10:42:06.703Z",
-    "favorite": false
-  },
-  "game-1779194504660": {
-    "name": "Grand Theft Auto V Enhanced",
-    "path": "C:\\Users\\hayde\\OneDrive\\Desktop\\Grand Theft Auto V Enhanced.url",
-    "playtime": 0,
-    "lastPlayed": 0,
     "favorite": false,
-    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1779194504660.jpg"
+    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\steam-bj7rq602c.jpg",
+    "lastPlayed": "2026-06-21T09:07:58.763Z",
+    "background": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Backgrounds\\steam-bj7rq602c.jpg",
+    "icon": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Icons\\steam-bj7rq602c.png",
+    "version": 3
+  },
+  "steam-vqfvydrs7": {
+    "name": "Gamble With Your Friends",
+    "path": "E:\\SteamLibrary\\steamapps\\common\\Gamble With Your Friends\\Gamble With Your Friends.exe",
+    "favorite": false,
+    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\steam-vqfvydrs7.jpg",
+    "lastPlayed": "",
+    "background": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Backgrounds\\steam-vqfvydrs7.jpg",
+    "icon": "",
+    "version": 2
+  },
+  "game-1782149067130": {
+    "name": "Castle Crashers",
+    "path": "C:\\Users\\hayde\\OneDrive\\Desktop\\Castle Crashers.url",
+    "favorite": false,
+    "cover": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Covers\\game-1782149067130.jpg",
+    "icon": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Icons\\game-1782149067130.png",
+    "background": "C:\\Users\\hayde\\OneDrive\\Documents\\HB-Launcher-Backgrounds\\game-1782149067130.jpg",
+    "version": 5
   }
 }

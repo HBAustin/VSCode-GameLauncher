@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } = require('e
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 
 app.commandLine.appendSwitch('enable-high-dpi-support', 'true');
 
@@ -39,13 +39,7 @@ function createWindow() {
 app.whenReady().then(() => {
     protocol.handle('local-image', async (request) => {
         let pathValue = decodeURIComponent(request.url.replace('local-image://', '')).split('?')[0];
-        if (pathValue[1] !== ':' && /^[a-zA-Z]/.test(pathValue)) {
-            pathValue = pathValue[0] + ':/' + pathValue.substring(1);
-        }
-        try {
-            const finalPath = path.isAbsolute(pathValue) ? pathValue : path.join(__dirname, pathValue);
-            return await net.fetch('file:///' + finalPath.replace(/\\/g, '/'));
-        } catch (err) { return new Response("Not Found", { status: 404 }); }
+        return net.fetch('file:///' + pathValue);
     });
     createWindow();
 });
@@ -56,48 +50,42 @@ let activeGameProcesses = {};
 
 ipcMain.on('launch-game-process', (event, { id, executablePath }) => {
     if (!executablePath || !fs.existsSync(executablePath)) return;
-    if (activeGameProcesses[id]) return;
-
+    
     const gameDir = path.dirname(executablePath);
-    const child = exec(`"${executablePath}"`, { cwd: gameDir }, (error) => {
-        if (error) console.error(error);
+    
+    // Spawn keeps process handle alive independent of launcher
+    const child = spawn(executablePath, [], { 
+        cwd: gameDir, 
+        detached: true, 
+        stdio: 'ignore' 
     });
+    child.unref();
 
     activeGameProcesses[id] = child;
     event.reply('game-started', { id });
-
-    child.on('exit', () => {
-        delete activeGameProcesses[id];
-        if (win && !win.isDestroyed()) {
-            win.webContents.send('game-stopped', { id });
-        }
-    });
 });
 
-ipcMain.on('apply-cover', async (event, { gameId, imageUrl, oldPath }) => {
+// IMAGE DOWNLOAD HANDLER
+async function downloadImage(gameId, imageUrl, subFolder, extension, oldPath, replyChannel) {
     try {
-        const folder = path.join(app.getPath('documents'), 'HB-Launcher-Covers');
+        const folder = path.join(app.getPath('documents'), `HB-Launcher-${subFolder}`);
         if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
         
-        const localPath = path.join(folder, `${gameId}.jpg`);
+        const localPath = path.join(folder, `${gameId}.${extension}`);
         
-        if (oldPath && fs.existsSync(oldPath)) {
-            fs.unlinkSync(oldPath);
-        }
+        if (oldPath && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
 
         const res = await axios({ url: imageUrl, responseType: 'arraybuffer' });
         fs.writeFileSync(localPath, Buffer.from(res.data));
         
-        if (win) win.webContents.send('cover-updated', { id: gameId, path: localPath });
+        if (win) win.webContents.send(replyChannel, { id: gameId, path: localPath });
         if (pickerWin) pickerWin.close();
-    } catch (err) { console.error("Cover apply error:", err); }
-});
+    } catch (err) { console.error(`Error applying ${subFolder}:`, err); }
+}
 
-ipcMain.on('delete-cover-file', (event, filePath) => {
-    if (filePath && fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-    }
-});
+ipcMain.on('apply-cover', (event, data) => downloadImage(data.gameId, data.imageUrl, 'Covers', 'jpg', data.oldPath, 'cover-updated'));
+ipcMain.on('apply-icon', (event, data) => downloadImage(data.gameId, data.imageUrl, 'Icons', 'png', data.oldPath, 'icon-updated'));
+ipcMain.on('apply-bg', (event, data) => downloadImage(data.gameId, data.imageUrl, 'Backgrounds', 'jpg', data.oldPath, 'bg-updated'));
 
 ipcMain.handle('scan-steam-library', async () => {
     const discovered = [];
@@ -129,6 +117,13 @@ ipcMain.handle('scan-steam-library', async () => {
     return discovered;
 });
 
+ipcMain.handle('get-file-icon', async (event, filePath) => {
+    try {
+        const nativeImg = await app.getFileIcon(filePath, { size: 'normal' });
+        return nativeImg.toDataURL(); 
+    } catch (err) { return null; }
+});
+
 ipcMain.handle('search-sgdb', async (e, query) => {
     try {
         const res = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(query)}`, { headers: { 'Authorization': `Bearer ${SGDB_KEY}` } });
@@ -136,45 +131,46 @@ ipcMain.handle('search-sgdb', async (e, query) => {
     } catch (err) { return []; }
 });
 
-ipcMain.handle('get-sgdb-grids', async (e, gid) => {
+ipcMain.handle('get-sgdb-grids', async (e, { gid, mode }) => {
     try {
-        const res = await axios.get(`https://www.steamgriddb.com/api/v2/grids/game/${gid}`, { headers: { 'Authorization': `Bearer ${SGDB_KEY}` } });
+        // Switch API endpoint based on what we are looking for
+        let endpoint = `grids/game/${gid}`;
+        if (mode === 'icon') endpoint = `icons/game/${gid}`;
+        if (mode === 'bg') endpoint = `heroes/game/${gid}`;
+
+        const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}`, { headers: { 'Authorization': `Bearer ${SGDB_KEY}` } });
         return res.data.success ? res.data.data : [];
     } catch (err) { return []; }
 });
 
 ipcMain.on('open-picker', (event, gameData) => {
-    if (pickerWin && !pickerWin.isDestroyed()) { pickerWin.focus(); return; }
+    if (pickerWin && !pickerWin.isDestroyed()) { pickerWin.close(); }
     pickerWin = new BrowserWindow({
         width: 800, height: 900, parent: win, modal: true, backgroundColor: '#1a1a1a',
         webPreferences: { nodeIntegration: true, contextIsolation: false }
     });
     pickerWin.loadFile('picker.html');
-    pickerWin.once('ready-to-show', () => { pickerWin.webContents.send('init-picker', gameData); });
+    // Ensure data is sent AFTER window loads so GameID isn't lost
+    pickerWin.webContents.on('did-finish-load', () => { 
+        pickerWin.webContents.send('init-picker', gameData); 
+    });
 });
 
 ipcMain.on('add-game-requested', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ['openFile'],
-        filters: [
-            { name: 'Executables', extensions: ['exe', 'bat', 'cmd', 'lnk', 'url'] }
-        ]
+        filters: [{ name: 'Executables', extensions: ['exe', 'bat', 'cmd', 'lnk', 'url'] }]
     });
 
-    if (!canceled && filePaths.length > 0) {
-        event.sender.send('add-game-confirmed', filePaths[0]);
-    }
+    if (!canceled && filePaths.length > 0) event.sender.send('add-game-confirmed', filePaths[0]);
 });
 
 ipcMain.handle('select-game', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ 
         properties: ['openFile'], 
-        filters: [
-            { name: 'Games & Shortcuts', extensions: ['exe', 'url', 'lnk'] }
-        ] 
+        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'url', 'lnk'] }] 
     });
     return canceled ? null : filePaths[0];
 });
 
-ipcMain.on('open-file-location', (event, filePath) => { if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath); });
 ipcMain.on('quit-app-now', () => { app.quit(); });
