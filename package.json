@@ -1,6 +1,6 @@
 {
   "name": "hb-launcher",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "HB Custom Game Launcher with SteamGridDB Picker",
   "author": "Hayden",
   "main": "main.js",

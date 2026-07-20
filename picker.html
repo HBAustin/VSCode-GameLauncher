@@ -28,8 +28,6 @@
         .glyph { width: 26px; height: 26px; background: white; color: black; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
         .glyph.a { background: #107c10; color: white; }
         .glyph.b { background: #e81123; color: white; }
-        .glyph.ps-cross { background: #00439c; color: white; font-family: sans-serif; }
-        .glyph.ps-circle { background: #cd0000; color: white; font-family: sans-serif; }
     </style>
 </head>
 <body>
@@ -50,6 +48,7 @@
         let currentGameId = null;
         let currentType = 'cover';
         let currentOldPath = null;
+        let userApiKey = '';
         let itemsCount = 0;
         let isGridMode = false;
 
@@ -66,6 +65,7 @@
             currentGameId = data.gameId; 
             currentType = data.type || 'cover';
             currentOldPath = data.oldPath || null;
+            userApiKey = data.apiKey || '';
             document.getElementById('searchInput').value = data.name;
             const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background' };
             document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
@@ -78,7 +78,7 @@
             res.classList.remove('grid-mode');
             isGridMode = false;
             res.innerHTML = '<div style="padding:20px; opacity:0.6;">Searching...</div>';
-            const data = await ipcRenderer.invoke('search-sgdb', query);
+            const data = await ipcRenderer.invoke('search-sgdb', { query, apiKey: userApiKey });
             res.innerHTML = '';
             itemsCount = data.length;
             focusIndex = 0;
@@ -96,7 +96,7 @@
         async function loadAssets(sgdbId) {
             const res = document.getElementById('results');
             res.innerHTML = `<div style="padding:20px; opacity:0.6;">Loading ${currentType}s...</div>`;
-            const assets = await ipcRenderer.invoke('get-sgdb-assets', { id: sgdbId, type: currentType });
+            const assets = await ipcRenderer.invoke('get-sgdb-assets', { id: sgdbId, type: currentType, apiKey: userApiKey });
             res.classList.add('grid-mode');
             isGridMode = true;
             res.innerHTML = '';
@@ -114,7 +114,6 @@
             if(isControllerMode) applyFocus();
         }
 
-        // Helper to get true current columns
         function getCols() {
             if (!isGridMode) return 1;
             const container = document.getElementById('results');

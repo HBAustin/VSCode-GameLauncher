@@ -11,8 +11,10 @@
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: #141414; border: 1px solid #222; flex-shrink: 0; }
         .controls { display: flex; gap: 1rem; align-items: center; }
-        select, #librarySearch, .control-btn { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
-        select:hover, #librarySearch:hover, .control-btn:hover { border-color: #555; }
+        select, #librarySearch, .control-btn, .api-input { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; font-size: 0.85rem; }
+        select:hover, #librarySearch:hover, .control-btn:hover, .api-input:hover { border-color: #555; }
+        .api-input { cursor: text; width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.1rem; text-align: center; margin-bottom: 20px; }
+        .api-input.focused { border-color: var(--accent); }
         body.controller-mode .header-focused { border-color: var(--accent) !important; transform: scale(1.03); background: #252525; }
 
         .content-wrapper { display: flex; gap: 20px; flex: 1; overflow: hidden; transition: all 0.3s ease; }
@@ -40,6 +42,8 @@
         .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0) !important; }
 
         #detail-panel { flex: 1; background: #111; border-radius: 12px; border: 1px solid #222; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; position: relative; }
+        #dp-content-state { justify-content: flex-end; }
+        
         .dp-hero { height: 60%; background: #1a1a1a center/cover no-repeat; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: background-image 0.3s ease; }
         .dp-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, #111 0%, transparent 80%, rgba(0,0,0,0.4) 100%); }
         .dp-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; }
@@ -50,8 +54,10 @@
         .dp-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 1.2rem; font-weight: bold; }
 
         .content-wrapper.list-mode #detail-panel { justify-content: flex-start; }
-        .content-wrapper.list-mode .dp-hero { justify-content: flex-start; }
+        .content-wrapper.list-mode #dp-content-state { justify-content: flex-start !important; }
+        .content-wrapper.list-mode .dp-hero { height: 380px; justify-content: flex-end; background-size: cover !important; background-position: center !important; flex-shrink: 0; }
         .content-wrapper.list-mode .dp-content { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 15px; width: 100%; }
+        .content-wrapper.list-mode .dp-info { flex: 1; overflow-y: auto; }
 
         .game-dashboard-pane { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
         .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
@@ -103,6 +109,7 @@
             </select>
             <button class="control-btn" id="viewToggleBtn" data-header-idx="2">🔲 Grid View</button>
             <button class="control-btn" id="addBtn" data-header-idx="3">+ Add Game</button>
+            <button class="control-btn" id="apiSetupBtn" data-header-idx="4">🔑 Connect API</button>
         </div>
     </div>
 
@@ -111,7 +118,7 @@
         
         <div id="detail-panel">
             <div id="dp-empty-state" class="dp-empty">Select a game from the list</div>
-            <div id="dp-content-state" style="display: none; height: 100%; flex-direction: column; justify-content: flex-end;">
+            <div id="dp-content-state" style="display: none; height: 100%; flex-direction: column;">
                 <div class="dp-hero" id="dpHero">
                     <div class="dp-content">
                         <h1 class="dp-title" id="dpTitle">Game Name</h1>
@@ -149,7 +156,7 @@
             <div class="menu-options" id="contextOptionsList">
                 <div class="menu-btn" data-action="toggle-fav" id="favMenuBtn">Favorite</div>
                 <div class="menu-btn" data-action="rename">Rename Game</div>
-                <div class="menu-btn" data-action="open-customize">Customize...</div>
+                <div class="menu-btn" data-action="open-customize">Customize Artwork...</div>
                 <div class="menu-btn" data-action="open-file-location">Open File Location</div>
                 <div class="menu-btn" data-action="change-path">Change Game Path</div>
                 <div class="menu-btn" data-action="remove" style="color: #ff4a4a;">Remove from Library</div>
@@ -176,6 +183,17 @@
             <div style="display: flex; gap: 12px;" id="renameActionsRow">
                 <button class="menu-btn" id="confirmRenameBtn" style="flex: 1; text-align: center;" data-rename-idx="0">Save</button>
                 <button class="menu-btn" id="cancelRenameBtn" style="flex: 1; text-align: center;" data-rename-idx="1">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="apiKeyModal" class="modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <h2 style="color:var(--accent); margin-top:0;">SteamGridDB API Key</h2>
+            <input type="password" id="modalApiKeyInput" placeholder="Paste your personal API key here..." class="api-input">
+            <div style="display: flex; gap: 12px;" id="apiActionsRow">
+                <button class="menu-btn" id="confirmApiBtn" style="flex: 1; text-align: center;" data-api-idx="0">Save</button>
+                <button class="menu-btn" id="cancelApiBtn" style="flex: 1; text-align: center;" data-api-idx="1">Cancel</button>
             </div>
         </div>
     </div>

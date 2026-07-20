@@ -8,10 +8,13 @@ const viewToggleBtn = document.getElementById('viewToggleBtn');
 const sortSelect = document.getElementById('sortSelect');
 const librarySearch = document.getElementById('librarySearch'); 
 const addBtn = document.getElementById('addBtn');
+const apiSetupBtn = document.getElementById('apiSetupBtn');
+const modalApiKeyInput = document.getElementById('modalApiKeyInput');
 
 const SAVE_PATH = './library.json';
 
 let gameData = {};
+let apiKey = '';
 let sortedIds = [];
 let currentEditingId = null;
 const iconCache = {}; 
@@ -25,6 +28,7 @@ let focusIndex = 0;
 let headerFocusIndex = 0;
 let modalFocusIndex = 0;
 let renameFocusIndex = 0;
+let apiModalFocusIndex = 0;
 let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
@@ -32,17 +36,64 @@ let lastActiveGamepadIndex = null;
 
 if (fs.existsSync(SAVE_PATH)) {
     try { 
-        gameData = JSON.parse(fs.readFileSync(SAVE_PATH));
+        const parsed = JSON.parse(fs.readFileSync(SAVE_PATH));
+        if (parsed.gameData && parsed.apiKey !== undefined) {
+            gameData = parsed.gameData;
+            apiKey = parsed.apiKey;
+        } else {
+            gameData = parsed;
+            if (gameData.gameData) delete gameData.gameData;
+            if (gameData.apiKey) delete gameData.apiKey;
+        }
         Object.values(gameData).forEach(d => { 
-            d.favorite ??= false; 
-            d.background ??= ''; 
-            d.icon ??= ''; 
-            d.lastPlayed ??= 0; 
+            if (d && typeof d === 'object') {
+                d.favorite ??= false; 
+                d.background ??= ''; 
+                d.icon ??= ''; 
+                d.lastPlayed ??= 0; 
+            }
         });
-    } catch (e) { console.error("Error loading save data:", e); }
+    } catch (e) { console.error("Error loading data file:", e); }
 }
 
-const saveToDisk = () => { fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2)); };
+const saveToDisk = () => { 
+    fs.writeFileSync(SAVE_PATH, JSON.stringify({ gameData, apiKey }, null, 2)); 
+    updateAPIButtonVisibility();
+};
+
+function updateAPIButtonVisibility() {
+    if (apiKey) {
+        apiSetupBtn.style.display = 'none';
+        if (headerFocusIndex === 4) headerFocusIndex = 0;
+    } else {
+        apiSetupBtn.style.display = 'inline-block';
+    }
+}
+
+apiSetupBtn.onclick = () => {
+    modalApiKeyInput.value = apiKey;
+    openModal('apiKey');
+};
+
+ipcRenderer.on('trigger-api-key-prompt', () => {
+    modalApiKeyInput.value = apiKey;
+    openModal('apiKey');
+});
+
+const handleApiSave = () => {
+    apiKey = modalApiKeyInput.value.trim();
+    saveToDisk();
+    closeModal();
+    
+    if (apiKey) {
+        alert("API Key Saved. Please note that it can take a few seconds for your new games to appear in your library as the Artworks are fetched from SteamGridDB.\n\n If you have any issues with fetching artworks, please ensure your API Key is valid and that you have not exceeded your daily request limit on SteamGridDB. \n\n You can remove or update your API key by pressing 'File > Set SteamGridDB API Key' in the menu bar.");
+    } else {
+        alert("API Key cleared. You will not be able to fetch new artworks from SteamGridDB until you add a valid API Key.");
+    }
+};
+
+document.getElementById('confirmApiBtn').onclick = handleApiSave;
+document.getElementById('cancelApiBtn').onclick = closeModal;
 
 const applyViewMode = () => {
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
@@ -60,7 +111,7 @@ viewToggleBtn.onclick = () => {
 };
 
 addBtn.onclick = () => {
-    ipcRenderer.send('add-game-requested');
+    ipcRenderer.send('add-game-requested', { apiKey });
 };
 
 sortSelect.onchange = () => renderLibrary();
@@ -174,6 +225,7 @@ function openModal(modalName) {
     currentZone = modalName + 'Modal';
     modalFocusIndex = 0;
     renameFocusIndex = 0;
+    apiModalFocusIndex = 0;
     document.getElementById(`${currentZone}`).style.display = 'flex';
     
     if (modalName === 'context') {
@@ -187,8 +239,9 @@ function closeModal() {
     document.getElementById('contextModal').style.display = 'none';
     document.getElementById('customizeModal').style.display = 'none';
     document.getElementById('renameModal').style.display = 'none';
+    document.getElementById('apiKeyModal').style.display = 'none';
     
-    if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {
+    if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal'].includes(currentZone)) {
         currentZone = sortedIds.length > 0 ? 'library' : 'header';
         if (isControllerMode) applyFocus();
     }
@@ -207,7 +260,14 @@ async function executeAction(action) {
             openModal('rename');
             if (!isControllerMode) document.getElementById('renameInput').focus();
         }, 
-        'open-customize': () => { closeModal(); openModal('customize'); },
+        'open-customize': () => { 
+            closeModal(); 
+            if (!apiKey) {
+                alert("Please add your SteamGridDB API Key to manually adjust artwork resources.");
+                return;
+            }
+            openModal('customize'); 
+        },
         'open-file-location': () => { if (gObj.path) ipcRenderer.send('open-file-location', gObj.path); closeModal(); },
         'change-path': async () => { 
             const newPath = await ipcRenderer.invoke('select-game'); 
@@ -218,11 +278,9 @@ async function executeAction(action) {
             } 
             closeModal();
         }, 
-        // FIXED: Now we pass the oldPath directly to the picker!
-        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '' }); closeModal(); }, 
-        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '' }); closeModal(); }, 
-        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '' }); closeModal(); }, 
-        // FIXED: Deletes the physical assets when wiping the game reference
+        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '', apiKey }); closeModal(); }, 
+        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '', apiKey }); closeModal(); }, 
+        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '', apiKey }); closeModal(); }, 
         'remove': () => { 
             ipcRenderer.send('delete-game-assets', [gObj.cover, gObj.icon, gObj.background]);
             delete gameData[currentEditingId]; 
@@ -253,7 +311,8 @@ document.getElementById('renameInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRenameSave(); else if (e.key === 'Escape') closeModal();
 });
 
-document.querySelectorAll('.menu-btn').forEach(btn => {
+// FIXED: Added [data-action] selector so modal Save/Cancel buttons aren't overridden
+document.querySelectorAll('.menu-btn[data-action]').forEach(btn => {
     btn.onclick = () => executeAction(btn.dataset.action);
 });
 
@@ -286,7 +345,7 @@ function setControllerActive(state) {
 
 window.addEventListener('mousemove', () => setControllerActive(false));
 window.addEventListener('keydown', (e) => {
-    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput')) {
+    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput') && document.activeElement !== modalApiKeyInput) {
         setControllerActive(false);
     }
 });
@@ -310,7 +369,7 @@ function updateGlyphs(gamepadId) {
 function applyFocus() {
     if (!isControllerMode) return;
 
-    document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn, #modalApiKeyInput').forEach(el => el.classList.remove('focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (currentZone === 'contextModal') {
@@ -332,11 +391,24 @@ function applyFocus() {
             if (actionBtns[renameFocusIndex - 1]) actionBtns[renameFocusIndex - 1].classList.add('focused');
         }
     }
+    else if (currentZone === 'apiKeyModal') {
+        const apiInputEl = document.getElementById('modalApiKeyInput');
+        if (apiModalFocusIndex === 0) {
+            apiInputEl.classList.add('focused');
+            apiInputEl.focus();
+        } else {
+            apiInputEl.blur();
+            const actionBtns = document.querySelectorAll('#apiActionsRow .menu-btn');
+            if (actionBtns[apiModalFocusIndex - 1]) actionBtns[apiModalFocusIndex - 1].classList.add('focused');
+        }
+    }
     else if (currentZone === 'header') {
-        const headerElements = document.querySelectorAll('[data-header-idx]');
-        if (headerElements[headerFocusIndex]) {
-            headerElements[headerFocusIndex].classList.add('header-focused');
-            if (headerFocusIndex === 0) headerElements[headerFocusIndex].focus(); else librarySearch.blur();
+        const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
+        const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex) || headerElements[0];
+        if (activeEl) {
+            activeEl.classList.add('header-focused');
+            if (activeEl.id === 'librarySearch') activeEl.focus(); 
+            else { librarySearch.blur(); }
         }
     } 
     else if (currentZone === 'library') {
@@ -404,10 +476,25 @@ function handleGamepadLoop() {
                 if (right && renameFocusIndex === 1) { renameFocusIndex = 2; moved = true; }
                 if (left && renameFocusIndex === 2) { renameFocusIndex = 1; moved = true; }
             }
+            else if (currentZone === 'apiKeyModal') {
+                if (down && apiModalFocusIndex === 0) { apiModalFocusIndex = 1; moved = true; }
+                if (up && apiModalFocusIndex > 0) { apiModalFocusIndex = 0; moved = true; }
+                if (right && apiModalFocusIndex === 1) { apiModalFocusIndex = 2; moved = true; }
+                if (left && apiModalFocusIndex === 2) { apiModalFocusIndex = 1; moved = true; }
+            }
             else if (currentZone === 'header') {
-                const headerElements = document.querySelectorAll('[data-header-idx]');
-                if (right && headerFocusIndex + 1 < headerElements.length) { headerFocusIndex++; moved = true; }
-                if (left && headerFocusIndex > 0) { headerFocusIndex--; moved = true; }
+                const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
+                let currentVisIdx = headerElements.findIndex(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
+                if (currentVisIdx === -1) currentVisIdx = 0;
+
+                if (right && currentVisIdx + 1 < headerElements.length) { 
+                    headerFocusIndex = parseInt(headerElements[currentVisIdx + 1].dataset.headerIdx); 
+                    moved = true; 
+                }
+                if (left && currentVisIdx > 0) { 
+                    headerFocusIndex = parseInt(headerElements[currentVisIdx - 1].dataset.headerIdx); 
+                    moved = true; 
+                }
                 if (down && sortedIds.length > 0) { currentZone = 'library'; moved = true; }
             } 
             else if (currentZone === 'library') {
@@ -418,7 +505,14 @@ function handleGamepadLoop() {
                 }
 
                 if (down) { if (focusIndex + cols < sortedIds.length) { focusIndex += cols; moved = true; } }
-                if (up) { if (focusIndex < cols) { currentZone = 'header'; headerFocusIndex = 0; moved = true; } else { focusIndex -= cols; moved = true; } }
+                if (up) { 
+                    if (focusIndex < cols) { 
+                        currentZone = 'header'; 
+                        const vis = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
+                        headerFocusIndex = vis.length > 0 ? parseInt(vis[0].dataset.headerIdx) : 0;
+                        moved = true; 
+                    } else { focusIndex -= cols; moved = true; } 
+                }
                 if (right) { 
                     if (viewMode === 'grid') {
                         if (focusIndex + 1 < sortedIds.length) { focusIndex++; moved = true; }
@@ -450,12 +544,18 @@ function handleGamepadLoop() {
                 if (renameFocusIndex === 1) handleRenameSave();
                 else if (renameFocusIndex === 2) closeModal();
             }
+            else if (currentZone === 'apiKeyModal') {
+                if (apiModalFocusIndex === 1) handleApiSave();
+                else if (apiModalFocusIndex === 2) closeModal();
+            }
             else if (currentZone === 'header') { 
-                if (headerFocusIndex === 1) {
-                    sortSelect.selectedIndex = (sortSelect.selectedIndex + 1) % sortSelect.options.length;
-                    sortSelect.dispatchEvent(new Event('change'));
-                } else {
-                    document.querySelectorAll('[data-header-idx]')[headerFocusIndex]?.click(); 
+                const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
+                const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
+                if (activeEl) {
+                    if (activeEl.id === 'sortSelect') {
+                        sortSelect.selectedIndex = (sortSelect.selectedIndex + 1) % sortSelect.options.length;
+                        sortSelect.dispatchEvent(new Event('change'));
+                    } else { activeEl.click(); }
                 }
             } 
             else if (currentZone === 'library' && sortedIds[focusIndex]) { launchItem(sortedIds[focusIndex]); }
@@ -467,10 +567,13 @@ function handleGamepadLoop() {
         }
 
         if (pressedB) {
-            if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {
+            if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal'].includes(currentZone)) {
                 closeModal();
             } else if (currentZone === 'library') {
-                currentZone = 'header'; headerFocusIndex = 0; applyFocus();
+                currentZone = 'header'; 
+                const vis = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
+                headerFocusIndex = vis.length > 0 ? parseInt(vis[0].dataset.headerIdx) : 0;
+                applyFocus();
             } else if (currentZone === 'detail-panel') {
                 currentZone = 'library'; applyFocus();
             }
@@ -489,7 +592,8 @@ function handleGamepadLoop() {
 ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); } });
-ipcRenderer.on('add-game-confirmed', (event, filePath) => { const id = 'game-' + Date.now(); const fileName = path.basename(filePath, path.extname(filePath)); gameData[id] = { name: fileName, path: filePath, favorite: false, cover: '', icon: '', background: '', lastPlayed: 0 }; saveToDisk(); renderLibrary(); });
+ipcRenderer.on('add-game-confirmed', (event, newGameObj) => { const { id, name, path, cover, background, icon } = newGameObj; gameData[id] = { name, path, favorite: false, cover, icon, background, lastPlayed: 0 }; saveToDisk(); renderLibrary(); if (viewMode === 'list') selectListItem(id); });
 
 applyViewMode();
+updateAPIButtonVisibility();
 requestAnimationFrame(handleGamepadLoop);
