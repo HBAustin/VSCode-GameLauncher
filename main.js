@@ -3,24 +3,96 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 const { pathToFileURL } = require('url');
+const THEMES = require('./themes/default-themes.js');
 
 app.commandLine.appendSwitch('enable-high-dpi-support', 'true');
-
 protocol.registerSchemesAsPrivileged([
     { scheme: 'local-image', privileges: { bypassCSP: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ]);
 
 let win, pickerWin;
+let activeDownloads = {}; // Track active downloads by gameId
 
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
+// Settings management
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'launcher-settings.json');
+
+function getDefaultSettings() {
+    return {
+        theme: 'dark',
+        customColors: { ...THEMES.dark.colors },
+        customFonts: { ...THEMES.dark.fonts },
+        customLayout: { ...THEMES.dark.layout },
+        windowSize: { width: 1400, height: 900 }
+    };
+}
+
+function loadSettings() {
+    try {
+        if (fs.existsSync(SETTINGS_FILE)) {
+            const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+            return JSON.parse(data);
+        }
+        return getDefaultSettings();
+    } catch (err) {
+        console.error('Error loading settings:', err);
+        return getDefaultSettings();
+    }
+}
+
+function saveSettings(settings) {
+    try {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+        return true;
+    } catch (err) {
+        console.error('Error saving settings:', err);
+        return false;
+    }
+}
+
+// PLATFORM DETECTION
+async function detectGamePlatform(gamePath) {
+    try {
+        // Check if it's a Steam game
+        const steamMatch = gamePath.match(/([A-Za-z]:\\)?.*?steamapps\\common/i);
+        if (steamMatch) {
+            // Try to find appmanifest file in parent steamapps directory
+            const steamappsDir = gamePath.substring(0, gamePath.indexOf('common') + 6);
+            const parentDir = path.dirname(steamappsDir);
+            
+            if (fs.existsSync(parentDir)) {
+                const files = fs.readdirSync(parentDir);
+                const manifestFile = files.find(f => f.startsWith('appmanifest_') && f.endsWith('.acf'));
+                
+                if (manifestFile) {
+                    const appId = manifestFile.match(/\d+/)[0];
+                    return { platform: 'steam', platformId: appId, confidence: 'high' };
+                }
+            }
+            return { platform: 'steam', platformId: null, confidence: 'medium' };
+        }
+
+        // Check if it's an Xbox App game
+        const xboxMatch = gamePath.match(/Program Files.*?Xbox|WindowsApps/i);
+        if (xboxMatch) {
+            // Try to extract package name from path
+            const packageMatch = gamePath.match(/([A-Za-z0-9._-]+)_[A-Za-z0-9]+$/i);
+            const packageId = packageMatch ? packageMatch[1] : null;
+            return { platform: 'xbox', platformId: packageId, confidence: 'high' };
+        }
+
+        return { platform: 'custom', platformId: null, confidence: 'none' };
+    } catch (err) {
+        console.error('Platform detection error:', err);
+        return { platform: 'custom', platformId: null, confidence: 'none', error: err.message };
+    }
+}
+
+// Single instance lock with focus restoration
+if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
     app.on('second-instance', () => {
-        if (win) {
-            if (win.isMinimized()) win.restore();
-            win.focus();
-        }
+        if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
     });
 }
 
@@ -152,6 +224,158 @@ ipcMain.on('delete-game-assets', (event, assetPaths) => {
     });
 });
 
+// PLATFORM DETECTION HANDLER
+ipcMain.handle('detect-game-platform', async (event, gamePath) => {
+    return await detectGamePlatform(gamePath);
+});
+
+// PLATFORM CHECKERS
+const steamChecker = require('./platforms/steam-checker.js');
+const xboxChecker = require('./platforms/xbox-checker.js');
+
+// UPDATE CHECKING & DOWNLOAD HANDLERS
+ipcMain.handle('check-game-update', async (event, { gameId, gamePath, platform, platformId, currentVersion }) => {
+    try {
+        // Use platform-specific checker if available
+        if (platform === 'steam' && platformId) {
+            return await steamChecker.checkUpdate(platformId, gamePath);
+        } else if (platform === 'xbox' && platformId) {
+            return await xboxChecker.checkUpdate(platformId, gamePath);
+        }
+
+        // Fallback for custom/unknown platforms
+        if (!gamePath || !fs.existsSync(gamePath)) {
+            return { hasUpdate: false, error: 'Game path not found', currentVersion: currentVersion || '1.0.0', latestVersion: currentVersion || '1.0.0' };
+        }
+
+        // Get file modification time as version indicator
+        const stats = fs.statSync(gamePath);
+        
+        return {
+            hasUpdate: false,
+            currentVersion: currentVersion || '1.0.0',
+            latestVersion: currentVersion || '1.0.0',
+            fileSize: stats.size,
+            lastModified: stats.mtime,
+            platform: platform || 'custom'
+        };
+    } catch (err) {
+        console.error('Update check error:', err);
+        return { hasUpdate: false, error: err.message, currentVersion: currentVersion || '1.0.0', latestVersion: currentVersion || '1.0.0', platform: platform || 'unknown' };
+    }
+});
+
+ipcMain.handle('download-game-update', async (event, { gameId, downloadUrl, targetPath }) => {
+    try {
+        if (!downloadUrl || !targetPath) {
+            throw new Error('Invalid download parameters');
+        }
+
+        // Ensure target directory exists
+        const targetDir = path.dirname(targetPath);
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        // Create abort controller for cancel support
+        const controller = new AbortController();
+        activeDownloads[gameId] = { controller, cancelled: false };
+
+        const response = await axios({
+            url: downloadUrl,
+            method: 'GET',
+            responseType: 'stream',
+            signal: controller.signal,
+            timeout: 30000
+        });
+
+        const totalSize = parseInt(response.headers['content-length'], 10);
+        let downloadedSize = 0;
+
+        return new Promise((resolve, reject) => {
+            const writeStream = fs.createWriteStream(targetPath);
+
+            response.data.on('data', (chunk) => {
+                downloadedSize += chunk.length;
+                const progress = Math.round((downloadedSize / totalSize) * 100);
+                
+                // Send progress update to renderer
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send('update-progress', {
+                        gameId,
+                        progress,
+                        downloadedSize,
+                        totalSize,
+                        speed: Math.round(downloadedSize / ((Date.now() - startTime) / 1000) / 1024 / 1024) // MB/s
+                    });
+                }
+            });
+
+            response.data.on('error', (err) => {
+                writeStream.destroy();
+                fs.unlink(targetPath, () => {}); // Clean up partial download
+                reject(err);
+            });
+
+            writeStream.on('error', (err) => {
+                response.data.destroy();
+                fs.unlink(targetPath, () => {});
+                reject(err);
+            });
+
+            writeStream.on('finish', () => {
+                delete activeDownloads[gameId];
+                resolve({ success: true, path: targetPath });
+            });
+
+            const startTime = Date.now();
+            response.data.pipe(writeStream);
+        });
+    } catch (err) {
+        delete activeDownloads[gameId];
+        console.error('Download error:', err);
+        throw err;
+    }
+});
+
+ipcMain.handle('cancel-game-update', async (event, gameId) => {
+    if (activeDownloads[gameId]) {
+        activeDownloads[gameId].controller.abort();
+        activeDownloads[gameId].cancelled = true;
+        delete activeDownloads[gameId];
+        return { cancelled: true };
+    }
+    return { cancelled: false };
+});
+
+// SETTINGS HANDLERS
+ipcMain.handle('get-settings', async (event) => {
+    return loadSettings();
+});
+
+ipcMain.handle('save-settings', async (event, settings) => {
+    const success = saveSettings(settings);
+    if (success && win && !win.isDestroyed()) {
+        win.webContents.send('settings-updated', settings);
+    }
+    return { success };
+});
+
+ipcMain.handle('get-theme-preset', async (event, themeName) => {
+    return THEMES[themeName] || THEMES.dark;
+});
+
+ipcMain.handle('get-all-themes', async (event) => {
+    return Object.entries(THEMES).map(([key, theme]) => ({
+        id: key,
+        name: theme.name,
+        preview: {
+            colors: theme.colors,
+            fonts: theme.fonts
+        }
+    }));
+});
+
 ipcMain.handle('get-file-icon', async (event, filePath) => {
     try {
         const nativeImg = await app.getFileIcon(filePath, { size: 'normal' });
@@ -264,3 +488,4 @@ ipcMain.handle('select-game', async () => {
 });
 
 ipcMain.on('open-file-location', (event, filePath) => { if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath); });
+

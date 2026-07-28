@@ -10,8 +10,9 @@
         body.controller-mode { padding-bottom: 8rem; }
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: #141414; border: 1px solid #222; flex-shrink: 0; }
-        .controls { display: flex; gap: 1rem; align-items: center; }
-        select, #librarySearch, .control-btn, .api-input { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; font-size: 0.85rem; }
+        .controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+        select, #librarySearch, .control-btn, .api-input { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; font-size: 0.85rem; min-width: 120px; }
+        #librarySearch { min-width: 180px; flex: 1; min-width: unset; }
         select:hover, #librarySearch:hover, .control-btn:hover, .api-input:hover { border-color: #555; }
         .api-input { cursor: text; width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.1rem; text-align: center; margin-bottom: 20px; }
         .api-input.focused { border-color: var(--accent); }
@@ -38,6 +39,9 @@
         .fallback-title { position: absolute; inset: 15px; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 700; font-size: 1rem; color: #777; border: 2px dashed #333; border-radius: 8px; }
         .fav-badge { position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.85); color: #ffb703; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; border: 1px solid #ffb703; z-index: 5; display: none; }
         .game-card.is-fav .fav-badge { display: block; }
+        .update-badge { position: absolute; top: 10px; left: 10px; background: rgba(255, 152, 0, 0.95); color: #000; padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; border: 1px solid #ff9800; z-index: 5; display: none; animation: pulse 2s infinite; }
+        .game-card.has-update .update-badge { display: block; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .info-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent); padding: 0.7rem 1rem; text-align: center; transform: translateY(101%); z-index: 3; transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1); }
         .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0) !important; }
 
@@ -51,6 +55,12 @@
         .dp-play-btn { background: var(--accent); color: white; border: none; padding: 15px 40px; font-size: 1.2rem; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 120, 212, 0.4); transition: 0.2s; border: 2px solid transparent; }
         .dp-play-btn:hover, body.controller-mode .dp-play-btn.focused { transform: scale(1.05); background: #108bed; border-color: white; }
         .dp-info { padding: 1.5rem 2rem; display: flex; flex-direction: column; }
+        .update-status { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(255, 152, 0, 0.15); border-left: 3px solid #ff9800; margin-bottom: 1rem; border-radius: 6px; font-size: 0.95rem; font-weight: 500; }
+        .update-status.up-to-date { background: rgba(76, 175, 80, 0.15); border-left-color: #4caf50; }
+        .update-status.checking { background: rgba(33, 150, 243, 0.15); border-left-color: #2196f3; }
+        .update-indicator { width: 12px; height: 12px; border-radius: 50%; background: #ff9800; }
+        .update-indicator.up-to-date { background: #4caf50; }
+        .update-indicator.checking { background: #2196f3; animation: pulse 1.5s infinite; }
         .dp-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 1.2rem; font-weight: bold; }
 
         .content-wrapper.list-mode #detail-panel { justify-content: flex-start; }
@@ -67,10 +77,20 @@
         .dash-value { font-size: 14px; color: #fff; font-weight: 500; }
         .dash-value.path-text { font-family: 'Consolas', monospace; font-size: 11px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
-        .dashboard-actions h3 { font-size: 12px; text-transform: uppercase; color: #666; margin: 0 0 0.5rem 0; letter-spacing: 0.03em; }
+        .dashboard-actions h3 { font-size: 12px; text-transform: uppercase; color: #666; margin: 1rem 0 0.5rem 0; letter-spacing: 0.03em; border-top: 1px solid #252525; padding-top: 1rem; }
         .action-buttons-row { display: flex; gap: 0.5rem; }
         .dash-btn { flex: 1; background: #1e1e1e; color: white; border: 1px solid #333; padding: 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s ease; }
         .dash-btn:hover, body.controller-mode .dash-btn.focused { background: var(--accent); border-color: var(--accent); transform: scale(1.02); }
+
+        /* PROGRESS BAR */
+        .progress-container { display: none; gap: 12px; padding: 12px 16px; background: rgba(33, 150, 243, 0.15); border-left: 3px solid #2196f3; margin-bottom: 1rem; border-radius: 6px; }
+        .progress-container.active { display: flex; flex-direction: column; }
+        .progress-info { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #fff; }
+        .progress-bar-bg { width: 100%; height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2196f3, #21cbf3); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+        .progress-status { font-size: 0.85rem; color: #aaa; }
+        .cancel-update-btn { background: rgba(255, 68, 68, 0.2); color: #ff4444; border: 1px solid #ff4444; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
+        .cancel-update-btn:hover { background: rgba(255, 68, 68, 0.3); }
 
         /* MODALS */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
@@ -80,6 +100,8 @@
         .menu-btn.focused, .menu-btn:hover { border-color: var(--accent); background: #252525; transform: scale(1.01); }
         #renameInput { width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.2rem; text-align: center; margin-bottom: 20px; transition: border-color 0.2s; }
         #renameInput.focused { border-color: var(--accent); }
+        #platformGameNameInput { width: 100%; padding: 12px; background: #1a1a1a; color: white; border: 2px solid #333; border-radius: 6px; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s; }
+        #platformGameNameInput.focused { border-color: var(--accent); }
 
         /* CONTROLLER FOOTER */
         .footer { position: fixed; bottom: -120px; left: 0; right: 0; background: rgba(10,10,10,0.98); border-top: 1px solid #333; padding: 1.2rem 2.5rem; display: flex; gap: 3rem; z-index: 1000; transition: bottom 0.4s; }
@@ -107,9 +129,10 @@
                 <option value="added">Recently Added</option>
                 <option value="recent">Recently Played</option>
             </select>
-            <button class="control-btn" id="viewToggleBtn" data-header-idx="2">🔲 Grid View</button>
-            <button class="control-btn" id="addBtn" data-header-idx="3">+ Add Game</button>
-            <button class="control-btn" id="apiSetupBtn" data-header-idx="4">🔑 Connect API</button>
+            <button class="control-btn" id="viewToggleBtn" data-header-idx="2">🔲 Grid</button>
+            <button class="control-btn" id="addBtn" data-header-idx="3">+ Add</button>
+            <button class="control-btn" id="apiSetupBtn" data-header-idx="4">⚙️ API</button>
+            <button class="control-btn" id="settingsBtn" data-header-idx="5">🎨 Settings</button>
         </div>
     </div>
 
@@ -126,6 +149,25 @@
                     </div>
                 </div>
                 <div class="dp-info">
+                    <div class="progress-container" id="progressContainer">
+                        <div class="progress-info">
+                            <span id="progressLabel">Checking for updates...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progressBarFill"></div>
+                        </div>
+                        <div style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
+                            <span class="progress-status" id="progressStatus">Initializing...</span>
+                            <button class="cancel-update-btn" id="cancelUpdateBtn">Cancel</button>
+                        </div>
+                    </div>
+                    <div id="updateStatusContainer" style="display: none;">
+                        <div class="update-status">
+                            <div class="update-indicator"></div>
+                            <span id="updateStatusText">Checking for updates...</span>
+                        </div>
+                    </div>
                     <div class="game-dashboard-pane">
                         <div class="dashboard-grid">
                             <div class="dash-card text-span-full">
@@ -140,6 +182,7 @@
                         <div class="dashboard-actions">
                             <h3>Library Management Shortcuts</h3>
                             <div class="action-buttons-row">
+                                <button class="dash-btn" id="dashBtnCheckUpdate">🔄 Update</button>
                                 <button class="dash-btn" id="dashBtnOpenFolder">📁 Browse Files</button>
                                 <button class="dash-btn" id="dashBtnChangePath">🔗 Change Path</button>
                             </div>
@@ -198,12 +241,159 @@
         </div>
     </div>
 
+    <div id="platformModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2 style="color:var(--accent); margin-top:0;">Confirm Game Platform</h2>
+            <div style="background: #141414; border: 1px solid #252525; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1rem;">
+                    <span style="font-size: 2rem;" id="platformIcon">🎮</span>
+                    <div>
+                        <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Detected Platform</div>
+                        <div style="font-size: 1.2rem; font-weight: bold; color: #fff;" id="platformName">Steam</div>
+                    </div>
+                </div>
+                <div id="platformDetails" style="font-size: 0.9rem; color: #aaa; padding-top: 1rem; border-top: 1px solid #333;">
+                    <div id="platformDetailText">Steam App ID will be automatically detected</div>
+                </div>
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-size: 0.85rem; color: #888; text-transform: uppercase; margin-bottom: 0.5rem; letter-spacing: 0.05em;">Game Name</label>
+                <input type="text" id="platformGameNameInput" placeholder="Game Name" style="width: 100%; padding: 12px; background: #1a1a1a; color: white; border: 2px solid #333; border-radius: 6px; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s;">
+            </div>
+            <div style="font-size: 0.85rem; color: #999; margin-bottom: 1.5rem; padding: 12px; background: rgba(33, 150, 243, 0.1); border-radius: 6px; border-left: 3px solid #2196f3;">
+                The launcher will check this platform for updates. You can change this later if needed.
+            </div>
+            <div style="display: flex; gap: 12px;" id="platformActionsRow">
+                <button class="menu-btn" id="confirmPlatformBtn" style="flex: 1; text-align: center; background: #2196f3; border-color: #2196f3;">Confirm</button>
+                <button class="menu-btn" id="changePlatformBtn" style="flex: 1; text-align: center;">Change</button>
+            </div>
+            <div id="platformOverrideOptions" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #333;">
+                <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.75rem; text-transform: uppercase;">Or select manually:</div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button class="menu-btn" data-platform-override="steam" style="text-align: left;">Steam</button>
+                    <button class="menu-btn" data-platform-override="xbox" style="text-align: left;">Xbox App / Game Pass</button>
+                    <button class="menu-btn" data-platform-override="custom" style="text-align: left;">Custom / Other</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="modal">
+        <div class="modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto; text-align: left;">
+            <h2 style="color:var(--accent); margin-top:0; text-align: center;">Launcher Settings</h2>
+            
+            <div style="margin-bottom: 2rem;">
+                <h3 style="margin-top: 0; font-size: 1rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em;">Theme Presets</h3>
+                <div id="themePresets" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 1.5rem;">
+                    <!-- Theme buttons will be generated here -->
+                </div>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+                <h3 style="margin-top: 0; font-size: 1rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em;">Custom Colors</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Background</label>
+                        <input type="color" id="colorBg" style="width: 100%; height: 40px; border: 2px solid #333; border-radius: 6px; cursor: pointer;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Accent Color</label>
+                        <input type="color" id="colorAccent" style="width: 100%; height: 40px; border: 2px solid #333; border-radius: 6px; cursor: pointer;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Text Color</label>
+                        <input type="color" id="colorText" style="width: 100%; height: 40px; border: 2px solid #333; border-radius: 6px; cursor: pointer;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Card Background</label>
+                        <input type="color" id="colorCard" style="width: 100%; height: 40px; border: 2px solid #333; border-radius: 6px; cursor: pointer;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+                <h3 style="margin-top: 0; font-size: 1rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em;">Layout</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Font Size</label>
+                        <select id="fontSize" style="width: 100%; padding: 8px; background: #1e1e1e; color: white; border: 2px solid #333; border-radius: 6px;">
+                            <option value="small">Small</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="large">Large</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Card Size</label>
+                        <select id="cardSize" style="width: 100%; padding: 8px; background: #1e1e1e; color: white; border: 2px solid #333; border-radius: 6px;">
+                            <option value="small">Small</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="large">Large</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 2rem;">
+                <button class="menu-btn" id="saveSettingsBtn" style="flex: 1; text-align: center; background: #2196f3; border-color: #2196f3;">Save Settings</button>
+                <button class="menu-btn" id="closeSettingsBtn" style="flex: 1; text-align: center;">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="footer">
         <div class="glyph-item"><div id="footerAGlyph" class="glyph a"></div> <span id="aLabel">Select / Play</span></div>
         <div class="glyph-item"><div id="footerXGlyph" class="glyph x"></div> <span id="xLabel">Options</span></div>
         <div class="glyph-item"><div id="footerBGlyph" class="glyph b"></div> <span id="bLabel">Back</span></div>
     </div>
 
+    <script>
+        const gameUpdateStatus = {};
+        
+        window.checkGameUpdate = async function(gameId, gamePath) {
+            if (!gamePath) return null;
+            const statusEl = document.getElementById('updateStatusContainer');
+            const statusText = document.getElementById('updateStatusText');
+            const indicator = statusEl?.querySelector('.update-indicator');
+            
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusText.textContent = 'Checking for updates...';
+                indicator?.classList.add('checking');
+            }
+            
+            try {
+                if (window.ipcRenderer) {
+                    const result = await window.ipcRenderer.invoke('check-game-update', {
+                        gameId,
+                        gamePath
+                    });
+                    gameUpdateStatus[gameId] = result;
+                    return result;
+                }
+            } catch (err) {
+                console.error('Update check failed:', err);
+            }
+        };
+        
+        window.displayUpdateStatus = function(status) {
+            const statusEl = document.getElementById('updateStatusContainer');
+            const statusText = document.getElementById('updateStatusText');
+            const indicator = statusEl?.querySelector('.update-indicator');
+            
+            if (!statusEl) return;
+            statusEl.style.display = 'block';
+            
+            if (status.hasUpdate) {
+                statusText.textContent = `Update available: v${status.latestVersion}`;
+                indicator?.classList.remove('up-to-date', 'checking');
+                indicator?.style.background = '#ff9800';
+            } else {
+                statusText.textContent = `Up to date (v${status.currentVersion})`;
+                indicator?.classList.add('up-to-date');
+                indicator?.classList.remove('checking');
+            }
+        };
+    </script>
     <script src="renderer.js"></script>
 </body>
 </html>

@@ -33,6 +33,7 @@ let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
+let pendingGamePlatform = null; 
 
 if (fs.existsSync(SAVE_PATH)) {
     try { 
@@ -50,7 +51,11 @@ if (fs.existsSync(SAVE_PATH)) {
                 d.favorite ??= false; 
                 d.background ??= ''; 
                 d.icon ??= ''; 
-                d.lastPlayed ??= 0; 
+                d.lastPlayed ??= 0;
+                d.currentVersion ??= '1.0.0';
+                d.latestVersion ??= '1.0.0';
+                d.platform ??= 'custom';
+                d.platformId ??= null;
             }
         });
     } catch (e) { console.error("Error loading data file:", e); }
@@ -94,6 +99,133 @@ const handleApiSave = () => {
 
 document.getElementById('confirmApiBtn').onclick = handleApiSave;
 document.getElementById('cancelApiBtn').onclick = closeModal;
+
+let currentSettings = { theme: 'dark', customColors: {}, customFonts: {}, customLayout: {} };
+
+const loadSettings = async () => {
+    try {
+        currentSettings = await ipcRenderer.invoke('get-settings');
+        applySettings(currentSettings);
+    } catch (err) {
+        console.error('Error loading settings:', err);
+    }
+};
+
+const applySettings = (settings) => {
+    const root = document.documentElement;
+    const colors = settings.customColors;
+    
+    if (colors.background) root.style.setProperty('--bg', colors.background);
+    if (colors.surface) root.style.setProperty('--card-bg', colors.surface);
+    if (colors.text) root.style.setProperty('--text', colors.text);
+    if (colors.accent) root.style.setProperty('--accent', colors.accent);
+    
+    const fonts = settings.customFonts;
+    if (fonts.sizeBase) document.body.style.fontSize = fonts.sizeBase;
+    if (fonts.family) document.body.style.fontFamily = fonts.family;
+    
+    const layout = settings.customLayout;
+    if (layout.compactMode) document.body.classList.add('compact-mode');
+    if (layout.cardSize) document.body.dataset.cardSize = layout.cardSize;
+};
+
+const showSettingsModal = async () => {
+    try {
+        const themes = await ipcRenderer.invoke('get-all-themes');
+        const presetsContainer = document.getElementById('themePresets');
+        presetsContainer.innerHTML = '';
+        
+        themes.forEach(theme => {
+            const btn = document.createElement('button');
+            btn.className = 'menu-btn';
+            btn.textContent = theme.name;
+            btn.style.cssText = `
+                background: ${theme.preview.colors.surface};
+                color: ${theme.preview.colors.text};
+                border-color: ${currentSettings.theme === theme.id ? theme.preview.colors.accent : '#333'};
+                border-width: ${currentSettings.theme === theme.id ? '3px' : '2px'};
+            `;
+            btn.onclick = async () => {
+                const preset = await ipcRenderer.invoke('get-theme-preset', theme.id);
+                currentSettings.theme = theme.id;
+                currentSettings.customColors = { ...preset.colors };
+                currentSettings.customFonts = { ...preset.fonts };
+                currentSettings.customLayout = { ...preset.layout };
+                updateColorInputs();
+                showSettingsModal();
+            };
+            presetsContainer.appendChild(btn);
+        });
+        
+        updateColorInputs();
+        openModal('settings');
+    } catch (err) {
+        console.error('Error showing settings:', err);
+    }
+};
+
+const updateColorInputs = () => {
+    document.getElementById('colorBg').value = currentSettings.customColors.background || '#1a1a1a';
+    document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#6366f1';
+    document.getElementById('colorText').value = currentSettings.customColors.text || '#e0e0e0';
+    document.getElementById('colorCard').value = currentSettings.customColors.surface || '#2a2a2a';
+    document.getElementById('fontSize').value = currentSettings.customLayout?.fontSize || 'medium';
+    document.getElementById('cardSize').value = currentSettings.customLayout?.cardSize || 'medium';
+};
+
+const saveSettings = async () => {
+    try {
+        currentSettings.customColors.background = document.getElementById('colorBg').value;
+        currentSettings.customColors.accent = document.getElementById('colorAccent').value;
+        currentSettings.customColors.text = document.getElementById('colorText').value;
+        currentSettings.customColors.surface = document.getElementById('colorCard').value;
+        currentSettings.customLayout = currentSettings.customLayout || {};
+        currentSettings.customLayout.fontSize = document.getElementById('fontSize').value;
+        currentSettings.customLayout.cardSize = document.getElementById('cardSize').value;
+        
+        const result = await ipcRenderer.invoke('save-settings', currentSettings);
+        if (result && result.success) {
+            applySettings(currentSettings);
+            closeModal();
+            console.log('Settings saved successfully');
+        } else {
+            alert('Failed to save settings');
+        }
+    } catch (err) {
+        console.error('Error saving settings:', err);
+        alert('Failed to save settings: ' + err.message);
+    }
+};
+
+const settingsBtn = document.getElementById('settingsBtn');
+settingsBtn.onclick = showSettingsModal;
+
+const ensureSettingsButtonsReady = () => {
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    const closeBtn = document.getElementById('closeSettingsBtn');
+    
+    if (saveBtn) {
+        saveBtn.onclick = (e) => {
+            e.preventDefault();
+            saveSettings();
+        };
+    }
+    if (closeBtn) {
+        closeBtn.onclick = (e) => {
+            e.preventDefault();
+            closeModal();
+        };
+    }
+};
+
+ensureSettingsButtonsReady();
+
+ipcRenderer.on('settings-updated', (settings) => {
+    currentSettings = settings;
+    applySettings(settings);
+});
+
+loadSettings();
 
 const applyViewMode = () => {
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
@@ -158,6 +290,7 @@ const selectListItem = (id) => {
         currentEditingId = id;
         executeAction('change-path');
     };
+    document.getElementById('dashBtnCheckUpdate').onclick = () => checkGameUpdates(id);
 };
 
 async function applyListIcon(thumbEl, gameId, gameDataObj) {
@@ -232,6 +365,11 @@ function openModal(modalName) {
         document.getElementById('contextGameName').innerText = gameData[currentEditingId].name;
         document.getElementById('favMenuBtn').innerText = gameData[currentEditingId].favorite ? "Unfavorite" : "Favorite";
     }
+    
+    if (modalName === 'settings') {
+        ensureSettingsButtonsReady();
+    }
+    
     if (isControllerMode) applyFocus();
 }
 
@@ -240,8 +378,10 @@ function closeModal() {
     document.getElementById('customizeModal').style.display = 'none';
     document.getElementById('renameModal').style.display = 'none';
     document.getElementById('apiKeyModal').style.display = 'none';
+    document.getElementById('platformModal').style.display = 'none';
+    document.getElementById('settingsModal').style.display = 'none';
     
-    if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal'].includes(currentZone)) {
+    if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal', 'platformModal', 'settingsModal'].includes(currentZone)) {
         currentZone = sortedIds.length > 0 ? 'library' : 'header';
         if (isControllerMode) applyFocus();
     }
@@ -311,7 +451,230 @@ document.getElementById('renameInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRenameSave(); else if (e.key === 'Escape') closeModal();
 });
 
-// FIXED: Added [data-action] selector so modal Save/Cancel buttons aren't overridden
+let currentUpdateGameId = null;
+
+async function checkGameUpdates(gameId) {
+    if (!gameId || !gameData[gameId]) return;
+    const gData = gameData[gameId];
+    currentUpdateGameId = gameId;
+    
+    const progressContainer = document.getElementById('progressContainer');
+    const progressLabel = document.getElementById('progressLabel');
+    const progressStatus = document.getElementById('progressStatus');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const cancelBtn = document.getElementById('cancelUpdateBtn');
+    
+    progressContainer.classList.add('active');
+    progressLabel.textContent = `Checking ${gData.name} for updates...`;
+    progressStatus.textContent = `Using ${gData.platform} platform...`;
+    progressPercent.textContent = '0%';
+    progressBarFill.style.width = '0%';
+    
+    try {
+        const result = await ipcRenderer.invoke('check-game-update', {
+            gameId,
+            gamePath: gData.path,
+            platform: gData.platform || 'custom',
+            platformId: gData.platformId || null,
+            currentVersion: gData.currentVersion || '1.0.0'
+        });
+        
+        if (result.error) {
+            progressStatus.textContent = `Error: ${result.error}`;
+            progressLabel.textContent = 'Update check failed';
+            return;
+        }
+
+        gData.currentVersion = result.currentVersion;
+        gData.latestVersion = result.latestVersion;
+        
+        if (result.hasUpdate) {
+            progressLabel.textContent = `Update available for ${gData.name}`;
+            progressStatus.textContent = `${result.updateReason || `Current: ${result.currentVersion} → Latest: ${result.latestVersion}`}`;
+            progressPercent.textContent = '✓';
+            progressBarFill.style.width = '100%';
+            cancelBtn.style.display = 'none';
+
+            const card = document.getElementById(gameId);
+            if (card) card.classList.add('has-update');
+
+            setTimeout(() => {
+                alert(`Update available for ${gData.name}!\n\n${result.updateReason || `Current: ${result.currentVersion}\nLatest: ${result.latestVersion}`}\n\nPlease use the ${gData.platform.toUpperCase()} launcher to install the update.`);
+            }, 500);
+        } else {
+            progressLabel.textContent = `${gData.name} is up to date`;
+            progressStatus.textContent = `Version: ${result.currentVersion}`;
+            progressPercent.textContent = '✓';
+            progressBarFill.style.width = '100%';
+            cancelBtn.style.display = 'none';
+            
+            const card = document.getElementById(gameId);
+            if (card) card.classList.remove('has-update');
+        }
+        
+        saveToDisk();
+    } catch (err) {
+        console.error('Update check error:', err);
+        progressStatus.textContent = `Failed: ${err.message}`;
+        progressLabel.textContent = 'Update check failed';
+        cancelBtn.style.display = 'inline-block';
+    }
+
+    setTimeout(() => {
+        if (progressContainer.classList.contains('active') && !progressStatus.textContent.includes('Error') && !progressStatus.textContent.includes('Failed')) {
+            progressContainer.classList.remove('active');
+        }
+    }, 5000);
+}
+
+document.getElementById('cancelUpdateBtn')?.addEventListener('click', async () => {
+    if (currentUpdateGameId) {
+        await ipcRenderer.invoke('cancel-game-update', currentUpdateGameId);
+        const progressContainer = document.getElementById('progressContainer');
+        progressContainer.classList.remove('active');
+        currentUpdateGameId = null;
+    }
+});
+
+document.getElementById('platformGameNameInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        document.getElementById('confirmPlatformBtn').click();
+    } else if (e.key === 'Escape') {
+        closePlatformModal();
+    }
+});
+
+ipcRenderer.on('update-progress', (event, { gameId, progress, downloadedSize, totalSize, speed }) => {
+    if (gameId !== currentUpdateGameId) return;
+    
+    const progressBarFill = document.getElementById('progressBarFill');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressStatus = document.getElementById('progressStatus');
+    
+    progressBarFill.style.width = `${progress}%`;
+    progressPercent.textContent = `${progress}%`;
+    
+    const downloadedMB = (downloadedSize / 1024 / 1024).toFixed(2);
+    const totalMB = (totalSize / 1024 / 1024).toFixed(2);
+    progressStatus.textContent = `${downloadedMB}MB / ${totalMB}MB (${speed}MB/s)`;
+});
+
+async function detectAndShowPlatform(gameId, name, gamePath, cover, icon, background) {
+    try {
+        const result = await ipcRenderer.invoke('detect-game-platform', gamePath);
+
+        pendingGamePlatform = {
+            id: gameId,
+            name,
+            path: gamePath,
+            cover,
+            icon,
+            background,
+            detectedPlatform: result.platform,
+            detectedPlatformId: result.platformId || '',
+            confidence: result.confidence
+        };
+
+        showPlatformModal(result);
+    } catch (err) {
+        console.error('Platform detection error:', err);
+
+        addGameWithPlatform('custom', null);
+    }
+}
+
+function showPlatformModal(detectionResult) {
+    const modal = document.getElementById('platformModal');
+    const icon = document.getElementById('platformIcon');
+    const name = document.getElementById('platformName');
+    const details = document.getElementById('platformDetailText');
+    const nameInput = document.getElementById('platformGameNameInput');
+    
+    const platformInfo = {
+        steam: { icon: '🎮', name: 'Steam', detail: `App ID: ${detectionResult.platformId || 'Auto-detect'}` },
+        xbox: { icon: '🎮', name: 'Xbox App / Game Pass', detail: `Package: ${detectionResult.platformId || 'Auto-detect'}` },
+        custom: { icon: '⚙️', name: 'Custom / Other', detail: 'No launcher detected' }
+    };
+
+    const info = platformInfo[detectionResult.platform] || platformInfo.custom;
+    icon.textContent = info.icon;
+    name.textContent = info.name;
+    details.textContent = info.detail;
+
+    let displayName = pendingGamePlatform.name;
+    if (displayName.toLowerCase().endsWith('.exe')) {
+        displayName = displayName.slice(0, -4);
+    }
+    nameInput.value = displayName;
+
+    document.getElementById('platformOverrideOptions').style.display = 'none';
+    
+    currentZone = 'platformModal';
+    modalFocusIndex = 0;
+    modal.style.display = 'flex';
+    if (isControllerMode) applyFocus();
+}
+
+function closePlatformModal() {
+    document.getElementById('platformModal').style.display = 'none';
+    currentZone = 'library';
+    pendingGamePlatform = null;
+}
+
+function addGameWithPlatform(platform, platformId) {
+    if (!pendingGamePlatform) return;
+
+    const editedName = document.getElementById('platformGameNameInput').value.trim();
+    const gameName = editedName || pendingGamePlatform.name;
+    
+    const { id, path, cover, icon, background } = pendingGamePlatform;
+    gameData[id] = {
+        name: gameName,
+        path,
+        favorite: false,
+        cover,
+        icon,
+        background,
+        lastPlayed: 0,
+        currentVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        platform: platform || 'custom',
+        platformId: platformId || null
+    };
+    
+    saveToDisk();
+    closePlatformModal();
+    renderLibrary();
+    if (viewMode === 'list') selectListItem(id);
+}
+
+document.getElementById('confirmPlatformBtn')?.addEventListener('click', () => {
+    if (pendingGamePlatform) {
+        const { detectedPlatform, detectedPlatformId } = pendingGamePlatform;
+        addGameWithPlatform(detectedPlatform, detectedPlatformId);
+    }
+});
+
+document.getElementById('changePlatformBtn')?.addEventListener('click', () => {
+    document.getElementById('platformOverrideOptions').style.display = 'block';
+});
+
+document.querySelectorAll('[data-platform-override]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const platform = e.target.dataset.platformOverride;
+        let platformId = null;
+        
+        if (platform === 'steam' && pendingGamePlatform?.detectedPlatformId) {
+            platformId = pendingGamePlatform.detectedPlatformId;
+        } else if (platform === 'xbox' && pendingGamePlatform?.detectedPlatformId) {
+            platformId = pendingGamePlatform.detectedPlatformId;
+        }
+        
+        addGameWithPlatform(platform, platformId);
+    });
+});
+
 document.querySelectorAll('.menu-btn[data-action]').forEach(btn => {
     btn.onclick = () => executeAction(btn.dataset.action);
 });
@@ -369,7 +732,7 @@ function updateGlyphs(gamepadId) {
 function applyFocus() {
     if (!isControllerMode) return;
 
-    document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn, #modalApiKeyInput').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.game-card, .menu-btn, #renameInput, #platformGameNameInput, .dash-btn, #dpPlayBtn, #modalApiKeyInput').forEach(el => el.classList.remove('focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (currentZone === 'contextModal') {
@@ -400,6 +763,25 @@ function applyFocus() {
             apiInputEl.blur();
             const actionBtns = document.querySelectorAll('#apiActionsRow .menu-btn');
             if (actionBtns[apiModalFocusIndex - 1]) actionBtns[apiModalFocusIndex - 1].classList.add('focused');
+        }
+    }
+    else if (currentZone === 'platformModal') {
+        const platformBtns = document.querySelectorAll('#platformActionsRow .menu-btn, [data-platform-override]');
+        if (document.getElementById('platformOverrideOptions').style.display === 'none') {
+
+            if (modalFocusIndex === 0) {
+                document.getElementById('platformGameNameInput').classList.add('focused');
+                document.getElementById('platformGameNameInput').focus();
+            } else {
+                document.getElementById('platformGameNameInput').blur();
+                const mainBtns = document.querySelectorAll('#platformActionsRow .menu-btn');
+                if (mainBtns[modalFocusIndex - 1]) mainBtns[modalFocusIndex - 1].classList.add('focused');
+            }
+        } else {
+
+            const overrideBtns = document.querySelectorAll('[data-platform-override]');
+            const idx = modalFocusIndex - 2;
+            if (overrideBtns[idx]) overrideBtns[idx].classList.add('focused');
         }
     }
     else if (currentZone === 'header') {
@@ -482,6 +864,21 @@ function handleGamepadLoop() {
                 if (right && apiModalFocusIndex === 1) { apiModalFocusIndex = 2; moved = true; }
                 if (left && apiModalFocusIndex === 2) { apiModalFocusIndex = 1; moved = true; }
             }
+            else if (currentZone === 'platformModal') {
+                const overrideShown = document.getElementById('platformOverrideOptions').style.display !== 'none';
+                if (overrideShown) {
+                    const overrideBtns = document.querySelectorAll('[data-platform-override]');
+                    const idx = modalFocusIndex - 3;
+                    if (down && idx + 1 < overrideBtns.length) { modalFocusIndex++; moved = true; }
+                    if (up && idx > 0) { modalFocusIndex--; moved = true; }
+                    if (up && idx === 0) { modalFocusIndex = 2; moved = true; } 
+                } else {
+                    if (down && modalFocusIndex === 0) { modalFocusIndex = 1; moved = true; }
+                    if (up && modalFocusIndex > 0) { modalFocusIndex = 0; moved = true; }
+                    if (right && modalFocusIndex === 1) { modalFocusIndex = 2; moved = true; }
+                    if (left && modalFocusIndex === 2) { modalFocusIndex = 1; moved = true; }
+                }
+            }
             else if (currentZone === 'header') {
                 const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
                 let currentVisIdx = headerElements.findIndex(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
@@ -548,6 +945,22 @@ function handleGamepadLoop() {
                 if (apiModalFocusIndex === 1) handleApiSave();
                 else if (apiModalFocusIndex === 2) closeModal();
             }
+            else if (currentZone === 'platformModal') {
+                const overrideShown = document.getElementById('platformOverrideOptions').style.display !== 'none';
+                if (overrideShown) {
+                    const overrideBtns = document.querySelectorAll('[data-platform-override]');
+                    const idx = modalFocusIndex - 3;
+                    if (overrideBtns[idx]) overrideBtns[idx].click();
+                } else {
+                    if (modalFocusIndex === 0) {
+                        
+                    } else if (modalFocusIndex === 1) {
+                        document.getElementById('confirmPlatformBtn').click();
+                    } else if (modalFocusIndex === 2) {
+                        document.getElementById('changePlatformBtn').click();
+                    }
+                }
+            }
             else if (currentZone === 'header') { 
                 const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
                 const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
@@ -567,7 +980,7 @@ function handleGamepadLoop() {
         }
 
         if (pressedB) {
-            if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal'].includes(currentZone)) {
+            if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal', 'platformModal'].includes(currentZone)) {
                 closeModal();
             } else if (currentZone === 'library') {
                 currentZone = 'header'; 
@@ -592,7 +1005,11 @@ function handleGamepadLoop() {
 ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); } });
-ipcRenderer.on('add-game-confirmed', (event, newGameObj) => { const { id, name, path, cover, background, icon } = newGameObj; gameData[id] = { name, path, favorite: false, cover, icon, background, lastPlayed: 0 }; saveToDisk(); renderLibrary(); if (viewMode === 'list') selectListItem(id); });
+ipcRenderer.on('add-game-confirmed', (event, newGameObj) => { 
+    const { id, name, path, cover, background, icon } = newGameObj; 
+    
+    detectAndShowPlatform(id, name, path, cover, icon, background);
+});
 
 applyViewMode();
 updateAPIButtonVisibility();
