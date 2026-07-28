@@ -11,9 +11,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let win, pickerWin;
-let activeDownloads = {}; // Track active downloads by gameId
+let activeDownloads = {}; 
 
-// Settings management
+
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'launcher-settings.json');
 
 function getDefaultSettings() {
@@ -52,10 +52,8 @@ function saveSettings(settings) {
 // PLATFORM DETECTION
 async function detectGamePlatform(gamePath) {
     try {
-        // Check if it's a Steam game
         const steamMatch = gamePath.match(/([A-Za-z]:\\)?.*?steamapps\\common/i);
         if (steamMatch) {
-            // Try to find appmanifest file in parent steamapps directory
             const steamappsDir = gamePath.substring(0, gamePath.indexOf('common') + 6);
             const parentDir = path.dirname(steamappsDir);
             
@@ -71,10 +69,9 @@ async function detectGamePlatform(gamePath) {
             return { platform: 'steam', platformId: null, confidence: 'medium' };
         }
 
-        // Check if it's an Xbox App game
         const xboxMatch = gamePath.match(/Program Files.*?Xbox|WindowsApps/i);
         if (xboxMatch) {
-            // Try to extract package name from path
+            
             const packageMatch = gamePath.match(/([A-Za-z0-9._-]+)_[A-Za-z0-9]+$/i);
             const packageId = packageMatch ? packageMatch[1] : null;
             return { platform: 'xbox', platformId: packageId, confidence: 'high' };
@@ -87,7 +84,6 @@ async function detectGamePlatform(gamePath) {
     }
 }
 
-// Single instance lock with focus restoration
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
@@ -236,19 +232,16 @@ const xboxChecker = require('./platforms/xbox-checker.js');
 // UPDATE CHECKING & DOWNLOAD HANDLERS
 ipcMain.handle('check-game-update', async (event, { gameId, gamePath, platform, platformId, currentVersion }) => {
     try {
-        // Use platform-specific checker if available
         if (platform === 'steam' && platformId) {
             return await steamChecker.checkUpdate(platformId, gamePath);
         } else if (platform === 'xbox' && platformId) {
             return await xboxChecker.checkUpdate(platformId, gamePath);
         }
 
-        // Fallback for custom/unknown platforms
         if (!gamePath || !fs.existsSync(gamePath)) {
             return { hasUpdate: false, error: 'Game path not found', currentVersion: currentVersion || '1.0.0', latestVersion: currentVersion || '1.0.0' };
         }
 
-        // Get file modification time as version indicator
         const stats = fs.statSync(gamePath);
         
         return {
@@ -299,7 +292,6 @@ ipcMain.handle('download-game-update', async (event, { gameId, downloadUrl, targ
                 downloadedSize += chunk.length;
                 const progress = Math.round((downloadedSize / totalSize) * 100);
                 
-                // Send progress update to renderer
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('update-progress', {
                         gameId,
@@ -313,7 +305,7 @@ ipcMain.handle('download-game-update', async (event, { gameId, downloadUrl, targ
 
             response.data.on('error', (err) => {
                 writeStream.destroy();
-                fs.unlink(targetPath, () => {}); // Clean up partial download
+                fs.unlink(targetPath, () => {});
                 reject(err);
             });
 
@@ -488,4 +480,3 @@ ipcMain.handle('select-game', async () => {
 });
 
 ipcMain.on('open-file-location', (event, filePath) => { if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath); });
-
