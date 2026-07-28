@@ -9,7 +9,7 @@ Right click on game / Press X or SQUARE on your controller to open additional co
 
 Favorite game (always appears first in launcher)
 Rename
-Add cover using SteamGridDB
+Add cover using SteamGridDB (API Key needed)
 Open / Edit file location
 Remove game from library
 
@@ -20,9 +20,6 @@ PS controller (tested with DS4 and DualSense controllers)
 
 //Switch Controller - untested, might show Xbox Glyphs//
 
-Playtime tracking (WIP - may not work correctly) 
-Search function (Controller Searching works correctly, KBM support mostly broken)
-
 --SteamGridDB--
 
 Cover images (should) save to Your documents folder:
@@ -30,9 +27,3 @@ Cover images (should) save to Your documents folder:
 C:\Users\yourname\Documents\HB-Launcher-Covers
 
 Images should delete themselves if not in use
-
-
-
-
-
-Use NPM to build if using source code
