@@ -445,11 +445,6 @@ const selectListItem = (id) => {
         enterFullScreenPreview();
     }
 
-    const heroSubtitle = document.getElementById('dpHeroSubtitle');
-    if (heroSubtitle) {
-        heroSubtitle.innerText = d.lastPlayed ? `Last played ${new Date(d.lastPlayed).toLocaleString()}` : 'Never played';
-    }
-
     if (d.lastPlayed) {
         document.getElementById('dashLastPlayed').innerText = new Date(d.lastPlayed).toLocaleString();
     } else {
