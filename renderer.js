@@ -31,7 +31,6 @@ let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
 
-
 if (fs.existsSync(SAVE_PATH)) {
     try { 
         const parsed = JSON.parse(fs.readFileSync(SAVE_PATH));
@@ -46,6 +45,7 @@ if (fs.existsSync(SAVE_PATH)) {
                 d.favorite ??= false; 
                 d.background ??= ''; 
                 d.icon ??= ''; 
+                d.logo ??= '';
                 d.lastPlayed ??= 0;
                 d.currentVersion ??= '1.0.0';
                 d.latestVersion ??= '1.0.0';
@@ -60,11 +60,12 @@ const saveToDisk = () => {
     fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2)); 
 };
 
-let currentSettings = { theme: 'dark', customColors: {}, customFonts: {}, customLayout: {} };
+let currentSettings = { theme: 'dark', steamGridApiKey: '', customColors: {}, customFonts: {}, customLayout: {} };
 
 function ensureSettingsDefaults(settings) {
     if (!settings || typeof settings !== 'object') settings = {};
     settings.theme ??= 'dark';
+    settings.steamGridApiKey ??= '';
     settings.customColors = settings.customColors || {};
     settings.customFonts = settings.customFonts || {};
     settings.customLayout = settings.customLayout || {};
@@ -108,50 +109,43 @@ const applySettings = (settings) => {
     if (layout.cardSize) document.body.dataset.cardSize = layout.cardSize;
     if (layout.fontSize) document.body.style.fontSize = layout.fontSize;
 
-    // Derived theme values
     try {
         const bg = (colors.background || getComputedStyle(root).getPropertyValue('--bg') || '#000').trim();
         const surface = (colors.surface || getComputedStyle(root).getPropertyValue('--card-bg') || '#111').trim();
         const isPreset = settings.theme && settings.theme !== 'custom';
 
         if (isPreset) {
-            // For preset themes compute header color automatically from surface
             const headerColor = getAutoHeaderTextColor(surface || bg);
             root.style.setProperty('--header-text', headerColor);
-            // Apply header text color inline so the preset enforces contrast
             const headerEl = document.getElementById('appHeader');
             if (headerEl) {
                 try {
                     headerEl.style.color = headerColor;
                     const headerTitle = headerEl.querySelector('h1');
                     if (headerTitle) headerTitle.style.color = headerColor;
-                const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
+                    const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
                     controls.forEach(c => { try { c.style.color = headerColor; } catch (e) {} });
-                } catch (e) { /* ignore */ }
+                } catch (e) {}
             }
-            // Apply same color to card text elements so header and cards match for presets
             try {
                 const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
                 cardTextSelectors.forEach(sel => {
                     document.querySelectorAll(sel).forEach(el => { try { el.style.color = headerColor; } catch (e) {} });
                 });
-            } catch (e) { /* ignore */ }
+            } catch (e) {}
         } else {
-            // Custom theme: respect manual `text` color set by user and DO NOT auto-compute
             const manualText = (colors.text || getComputedStyle(root).getPropertyValue('--text') || '#ffffff').trim();
             root.style.setProperty('--header-text', manualText);
-            // Apply manual text color inline (overrides any previous preset inline styles)
             try {
                 const headerEl = document.getElementById('appHeader');
                 if (headerEl) {
                     headerEl.style.color = manualText;
                     const headerTitle = headerEl.querySelector('h1');
                     if (headerTitle) headerTitle.style.color = manualText;
-                const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
+                    const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
                     controls.forEach(c => { try { c.style.color = manualText; } catch (e) {} });
                 }
             } catch (e) {}
-            // Apply manual text color to card elements and menus as well
             try {
                 const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
                 cardTextSelectors.forEach(sel => {
@@ -171,7 +165,6 @@ const applySettings = (settings) => {
     } catch (e) { console.error('Error computing derived theme colors:', e); }
 };
 
-// Helpers for color math
 function hexToRgb(hex) {
     hex = hex.replace('#','').trim();
     if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
@@ -200,23 +193,18 @@ function getAutoHeaderTextColor(bgHex) {
     try {
         const rgb = hexToRgb(bgHex);
         const lum = luminance(rgb);
-        // Dark backgrounds -> white; medium -> grey; light -> black
         if (lum < 0.25) return '#ffffff';
         if (lum < 0.7) return '#888888';
         return '#000000';
     } catch (e) { return '#ffffff'; }
 }
 
-
-
 const showSettingsModal = async () => {
-    console.log('showSettingsModal called');
     try {
         const themes = await ipcRenderer.invoke('get-all-themes');
         const presetsContainer = document.getElementById('themePresets');
         if (!presetsContainer) {
-            console.error('Theme presets container not found in DOM');
-            openModal('settings'); // still attempt to open modal
+            openModal('settings');
             return;
         }
         presetsContainer.innerHTML = '';
@@ -240,9 +228,7 @@ const showSettingsModal = async () => {
                         currentSettings.customFonts = { ...preset.fonts };
                         currentSettings.customLayout = { ...preset.layout };
                         updateColorInputs();
-                        // refresh visuals
                         applySettings(currentSettings);
-                        // refresh preset buttons
                         showSettingsModal();
                     } catch (e) { console.error('Error applying preset:', e); }
                 };
@@ -254,11 +240,12 @@ const showSettingsModal = async () => {
         openModal('settings');
     } catch (err) {
         console.error('Error showing settings:', err);
-        try { openModal('settings'); } catch (e) { console.error('Failed to open settings modal:', e); }
+        try { openModal('settings'); } catch (e) {}
     }
 };
 
 const updateColorInputs = () => {
+    document.getElementById('steamGridApiKey').value = currentSettings.steamGridApiKey || '';
     document.getElementById('colorBg').value = currentSettings.customColors.background || '#1a1a1a';
     document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#6366f1';
     document.getElementById('colorText').value = currentSettings.customColors.text || '#e0e0e0';
@@ -271,10 +258,10 @@ const updateColorInputs = () => {
 
 const saveSettings = async () => {
     try {
-        // Ensure containers exist
         currentSettings.customColors = currentSettings.customColors || {};
         currentSettings.customLayout = currentSettings.customLayout || {};
 
+        const apiKeyEl = document.getElementById('steamGridApiKey');
         const colorBgEl = document.getElementById('colorBg');
         const colorAccentEl = document.getElementById('colorAccent');
         const colorTextEl = document.getElementById('colorText');
@@ -282,6 +269,7 @@ const saveSettings = async () => {
         const fontSizeEl = document.getElementById('fontSize');
         const cardSizeEl = document.getElementById('cardSize');
 
+        if (apiKeyEl) currentSettings.steamGridApiKey = apiKeyEl.value.trim();
         if (colorBgEl) currentSettings.customColors.background = colorBgEl.value;
         if (colorAccentEl) currentSettings.customColors.accent = colorAccentEl.value;
         if (colorTextEl) currentSettings.customColors.text = colorTextEl.value;
@@ -291,28 +279,23 @@ const saveSettings = async () => {
         const useLogoEl = document.getElementById('useLogoOnHero');
         if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
 
-        // User changed colors manually -> treat as a custom theme
         currentSettings.theme = 'custom';
         currentSettings = ensureSettingsDefaults(currentSettings);
 
-        // Build a safe, serializable copy to send over IPC
         const safeSettings = {
             theme: currentSettings.theme,
+            steamGridApiKey: currentSettings.steamGridApiKey,
             customColors: { ...(currentSettings.customColors || {}) },
             customFonts: { ...(currentSettings.customFonts || {}) },
             customLayout: { ...(currentSettings.customLayout || {}) },
             windowSize: currentSettings.windowSize || {}
         };
 
-        console.log('Saving settings (sanitized):', safeSettings);
-
         const result = await ipcRenderer.invoke('save-settings', safeSettings);
         if (result && result.success) {
-            // Update local settings with the sanitized version
             currentSettings = ensureSettingsDefaults(safeSettings);
             applySettings(currentSettings);
             closeModal();
-            console.log('Settings saved successfully');
         } else {
             alert('Failed to save settings');
         }
@@ -323,7 +306,7 @@ const saveSettings = async () => {
 };
 
 let settingsBtn = document.getElementById('settingsBtn');
-if (!settingsBtn) settingsBtn = document.querySelector('[data-header-idx="5"]');
+if (!settingsBtn) settingsBtn = document.querySelector('[data-header-idx="4"]');
 if (settingsBtn) {
     settingsBtn.onclick = (e) => {
         try {
@@ -333,8 +316,6 @@ if (settingsBtn) {
             console.error('Error opening settings modal:', err);
         }
     };
-} else {
-    console.error('Settings button not found in DOM');
 }
 
 const ensureSettingsButtonsReady = () => {
@@ -480,9 +461,7 @@ const selectListItem = (id) => {
         currentEditingId = id;
         executeAction('change-path');
     };
-    // Update functionality removed; no action bound
 
-    // Render optional logo on hero if enabled
     try {
         const dpLogoContainer = document.getElementById('dpLogoContainer');
         const dpTitleEl = document.getElementById('dpTitle');
@@ -559,7 +538,6 @@ function renderLibrary() {
         library.appendChild(card);
     });
 
-    // Re-apply settings-derived inline styles (ensures new cards pick up header/card text color)
     try { applySettings(currentSettings); } catch (e) { console.error('Failed to reapply settings after render:', e); }
 
     if (isControllerMode) applyFocus();
@@ -627,7 +605,7 @@ async function executeAction(action) {
         'logo': () => { ipcRenderer.send('open-logo-picker', { gameId: currentEditingId, name: gameName, type: 'logo', oldPath: gObj.logo || '' }); closeModal(); }, 
         'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '' }); closeModal(); }, 
         'remove': () => { 
-            ipcRenderer.send('delete-game-assets', [gObj.cover, gObj.icon, gObj.background]);
+            ipcRenderer.send('delete-game-assets', [gObj.cover, gObj.icon, gObj.background, gObj.logo]);
             delete gameData[currentEditingId]; 
             saveToDisk(); 
             renderLibrary(); 
@@ -656,13 +634,14 @@ document.getElementById('renameInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRenameSave(); else if (e.key === 'Escape') closeModal();
 });
 
-function addGameToLibrary({ id, name, path, cover, icon, background }) {
+function addGameToLibrary({ id, name, path, cover, icon, logo, background }) {
     gameData[id] = {
         name,
         path,
         favorite: false,
         cover,
         icon,
+        logo,
         background,
         lastPlayed: 0,
         currentVersion: '1.0.0',
@@ -713,7 +692,7 @@ function setControllerActive(state) {
 
 window.addEventListener('mousemove', () => setControllerActive(false));
 window.addEventListener('keydown', (e) => {
-    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput')) {
+    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput') && document.activeElement !== document.getElementById('steamGridApiKey')) {
         setControllerActive(false);
     }
     if (e.key === 'Escape' && isFullScreenPreviewActive) {

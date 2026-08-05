@@ -90,6 +90,49 @@ function saveSettings(settings) {
     }
 }
 
+async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
+    const results = { cover: '', background: '', logo: '', icon: '' };
+    if (!apiKey) return results;
+
+    const headers = { Authorization: `Bearer ${apiKey}` };
+
+    try {
+        const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
+        if (!searchRes.data.success || !searchRes.data.data.length) return results;
+
+        const sgGameId = searchRes.data.data[0].id;
+        const docsPath = app.getPath('documents');
+
+        const downloadAsset = async (endpoint, folderName, ext) => {
+            try {
+                const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}/game/${sgGameId}`, { headers });
+                if (res.data.success && res.data.data.length > 0) {
+                    const imgUrl = res.data.data[0].url;
+                    const folder = path.join(docsPath, folderName);
+                    if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+
+                    const localPath = path.join(folder, `${gameId}${ext}`);
+                    const response = await axios({ url: imgUrl, responseType: 'arraybuffer' });
+                    fs.writeFileSync(localPath, Buffer.from(response.data));
+                    return localPath;
+                }
+            } catch (err) {
+                console.error(`Failed to fetch ${endpoint} from SteamGridDB:`, err.message);
+            }
+            return '';
+        };
+
+        results.cover = await downloadAsset('grids', 'HB-Launcher-Covers', '.jpg');
+        results.background = await downloadAsset('heroes', 'HB-Launcher-Backgrounds', '.jpg');
+        results.logo = await downloadAsset('logos', 'HB-Launcher-Logos', '.png');
+        results.icon = await downloadAsset('icons', 'HB-Launcher-Icons', '.png');
+    } catch (err) {
+        console.error('SteamGridDB Search Error:', err.message);
+    }
+
+    return results;
+}
+
 app.whenReady().then(() => {
     protocol.handle('local-image', async (request) => {
         try {
@@ -200,10 +243,6 @@ ipcMain.on('delete-game-assets', (event, assetPaths) => {
     });
 });
 
-
-// Update functionality removed
-
-// SETTINGS HANDLERS
 ipcMain.handle('get-settings', async (event) => {
     return loadSettings();
 });
@@ -259,9 +298,18 @@ ipcMain.on('add-game-requested', async (event) => {
     
     let coverPath = '';
     let iconPath = '';
+    let logoPath = '';
     let bgPath = '';
 
-    // Native environment application fallback icon collection
+    const settings = loadSettings();
+    if (settings.steamGridApiKey) {
+        const fetchedAssets = await fetchSteamGridArtwork(fileName, settings.steamGridApiKey, gameId);
+        coverPath = fetchedAssets.cover || '';
+        bgPath = fetchedAssets.background || '';
+        logoPath = fetchedAssets.logo || '';
+        iconPath = fetchedAssets.icon || '';
+    }
+
     if (!iconPath) {
         try {
             const nativeImg = await app.getFileIcon(filePath, { size: 'normal' });
@@ -284,6 +332,7 @@ ipcMain.on('add-game-requested', async (event) => {
         path: filePath,
         cover: coverPath,
         background: bgPath,
+        logo: logoPath,
         icon: iconPath
     });
 });
