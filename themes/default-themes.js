@@ -91,14 +91,14 @@ const THEMES = {
     minimal: {
         name: 'Minimal',
         colors: {
-            background: '#fafafa',
+            background: '#ffffff',
             surface: '#ffffff',
-            surfaceHover: '#f8f8f8',
-            text: '#333333',
-            textSecondary: '#999999',
-            accent: '#000000',
+            surfaceHover: '#f0f0f0',
+            text: '#111111',
+            textSecondary: '#666666',
+            accent: '#111111',
             accentHover: '#333333',
-            border: '#f0f0f0',
+            border: '#e8e8e8',
             success: '#2ecc71',
             warning: '#f39c12',
             error: '#e74c3c'

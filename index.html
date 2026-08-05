@@ -4,12 +4,21 @@
     <meta charset="UTF-8">
     <title>HB Launcher</title>
     <style>
-        :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; }
+        :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; --header-text: #ffffff; --card-bg-hover: rgba(255,255,255,0.06); --sidebar-width: 300px; --card-gap: 10px; }
         * { box-sizing: border-box; outline: none; }
         body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow: hidden; height: 100vh; transition: padding-bottom 0.3s; display: flex; flex-direction: column; }
         body.controller-mode { padding-bottom: 8rem; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: #141414; border: 1px solid #222; flex-shrink: 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border, #222); color: var(--header-text); flex-shrink: 0; position: relative; }
+        .header h1 { margin: 0; z-index: 3; pointer-events: none; }
+        .header .controls { display: flex; gap: 0.75rem; align-items: center; z-index: 4; position: relative; }
+        .header .controls select, .header .controls #librarySearch, .header .controls .control-btn, .header .controls .api-input {
+            color: var(--header-text);
+            background: transparent;
+            border-color: transparent;
+            pointer-events: auto;
+        }
+        .header .controls .control-btn { border: 1px solid rgba(255,255,255,0.06); }
         .controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
         select, #librarySearch, .control-btn, .api-input { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; font-size: 0.85rem; min-width: 120px; }
         #librarySearch { min-width: 180px; flex: 1; min-width: unset; }
@@ -18,15 +27,32 @@
         .api-input.focused { border-color: var(--accent); }
         body.controller-mode .header-focused { border-color: var(--accent) !important; transform: scale(1.03); background: #252525; }
 
-        .content-wrapper { display: flex; gap: 20px; flex: 1; overflow: hidden; transition: all 0.3s ease; }
+        .content-wrapper { display: flex; width: 100%; gap: 20px; flex: 1; overflow: hidden; transition: all 0.3s ease; align-items: flex-start; }
 
-        .content-wrapper.grid-mode #library { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; width: 100%; overflow-y: auto; padding: 15px; align-content: start; }
+        .content-wrapper.grid-mode #library { display: grid; grid-template-columns: repeat(6, minmax(220px, 1fr)); grid-auto-rows: minmax(280px, auto); gap: 18px; width: 100%; overflow-y: auto; padding: 18px; align-content: start; }
         .content-wrapper.grid-mode #detail-panel { display: none; }
-        .content-wrapper.grid-mode .game-card { aspect-ratio: 2/3; flex-direction: column; justify-content: flex-end; }
+        .full-screen-preview .content-wrapper.grid-mode #library { display: none; }
+        .full-screen-preview .content-wrapper.grid-mode #detail-panel { display: flex; width: 100%; }
+        .content-wrapper.grid-mode .game-card { aspect-ratio: 4/5; min-height: 280px; flex-direction: column; justify-content: flex-end; }
 
-        .content-wrapper.list-mode #library { width: 300px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 15px; flex-shrink: 0; }
+        body.full-screen-mode .content-wrapper.grid-mode #library { grid-template-columns: repeat(6, minmax(220px, 1fr)); gap: 20px; }
+
+        @media (max-width: 1600px) {
+            .content-wrapper.grid-mode #library { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
+        }
+        @media (max-width: 1280px) {
+            .content-wrapper.grid-mode #library { grid-template-columns: repeat(4, minmax(220px, 1fr)); }
+        }
+        @media (max-width: 980px) {
+            .content-wrapper.grid-mode #library { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
+        }
+        @media (max-width: 720px) {
+            .content-wrapper.grid-mode #library { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+        }
+
+        .content-wrapper.list-mode #library { width: var(--sidebar-width, 300px); display: flex; flex-direction: column; gap: var(--card-gap, 8px); overflow-y: auto; padding: 15px; flex-shrink: 0; }
         .content-wrapper.list-mode .game-card { height: 45px; flex-direction: row; align-items: center; justify-content: flex-start; padding: 6px 10px; gap: 12px; }
-        .content-wrapper.list-mode .game-card.list-selected { background: rgba(255, 255, 255, 0.1); border-color: var(--accent) !important; }
+        .content-wrapper.list-mode .game-card.list-selected { background: var(--card-bg-hover); border-color: var(--accent) !important; }
         .content-wrapper.list-mode .info-overlay, .content-wrapper.list-mode .fallback-title { display: none !important; }
         
         .list-thumb { width: 32px; height: 32px; background: #333 center/cover no-repeat; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
@@ -45,27 +71,52 @@
         .info-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 70%, transparent); padding: 0.7rem 1rem; text-align: center; transform: translateY(101%); z-index: 3; transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1); }
         .game-card:hover .info-overlay, body.controller-mode .game-card.focused .info-overlay { transform: translateY(0) !important; }
 
-        #detail-panel { flex: 1; background: #111; border-radius: 12px; border: 1px solid #222; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; position: relative; }
-        #dp-content-state { justify-content: flex-end; }
+        #detail-panel { flex: 1 1 auto; min-width: 0; width: 100%; background: var(--card-bg); border-radius: 12px; border: 1px solid #222; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        #dp-content-state { justify-content: flex-start; height: auto; }
         
-        .dp-hero { height: 60%; background: #1a1a1a center/cover no-repeat; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: background-image 0.3s ease; }
-        .dp-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, #111 0%, transparent 80%, rgba(0,0,0,0.4) 100%); }
-        .dp-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; }
-        .dp-title { font-size: 2.5rem; margin: 0 0 10px 0; text-shadow: 0 4px 10px rgba(0,0,0,0.8); }
-        .dp-play-btn { background: var(--accent); color: white; border: none; padding: 15px 40px; font-size: 1.2rem; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 120, 212, 0.4); transition: 0.2s; border: 2px solid transparent; }
-        .dp-play-btn:hover, body.controller-mode .dp-play-btn.focused { transform: scale(1.05); background: #108bed; border-color: white; }
-        .dp-info { padding: 1.5rem 2rem; display: flex; flex-direction: column; }
-        .update-status { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(255, 152, 0, 0.15); border-left: 3px solid #ff9800; margin-bottom: 1rem; border-radius: 6px; font-size: 0.95rem; font-weight: 500; }
-        .update-status.up-to-date { background: rgba(76, 175, 80, 0.15); border-left-color: #4caf50; }
-        .update-status.checking { background: rgba(33, 150, 243, 0.15); border-left-color: #2196f3; }
-        .update-indicator { width: 12px; height: 12px; border-radius: 50%; background: #ff9800; }
-        .update-indicator.up-to-date { background: #4caf50; }
-        .update-indicator.checking { background: #2196f3; animation: pulse 1.5s infinite; }
-        .dp-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #555; font-size: 1.2rem; font-weight: bold; }
+        .dp-hero { flex: none; height: 340px; min-height: 340px; background: var(--card-bg) center/cover no-repeat; background-size: cover; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: background-image 0.3s ease, background-color 0.3s ease; }
+        .dp-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(17,17,17,0.96) 0%, rgba(17,17,17,0.45) 40%, transparent 100%); }
+        .dp-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: flex-start; gap: 1rem; flex-wrap: wrap; }
+        .dp-title-block { display: flex; flex-direction: column; gap: 0.5rem; max-width: min(70%, 560px); }
+        .dp-title { font-size: clamp(1.8rem, 3vw, 2.8rem); margin: 0; text-shadow: 0 4px 12px rgba(0,0,0,0.85); color: var(--header-text); }
+        .dp-subtitle { color: rgba(255,255,255,0.85); font-size: 0.95rem; }
+        .dp-action-row { display: flex; justify-content: flex-start; padding: 1.2rem 2rem 0 2rem; }
+        .dp-play-btn { background: #c22e2e; color: white; border: none; padding: 14px 30px; font-size: 1rem; font-weight: 700; border-radius: 10px; cursor: pointer; box-shadow: 0 0 0 rgba(0, 120, 212, 0); transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; border: 2px solid transparent; white-space: nowrap; }
+        .dp-play-btn:hover, .dp-play-btn:focus, body.controller-mode .dp-play-btn.focused { transform: translateY(-1px) scale(1.02); color: #000; background: #ff8a8a; border-color: rgba(255,255,255,0.6); box-shadow: 0 14px 40px rgba(160, 0, 0, 0.28); }
+        .dp-info { padding: 1.5rem 2rem 2rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+        .dp-info, .dp-action-row { background: var(--card-bg); }
+        body.full-screen-mode { padding: 0; min-height: 100vh; }
+        body.full-screen-mode .header { padding: 1rem 1.5rem; border-radius: 0; margin: 0; border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 20; }
+        body.full-screen-mode .controls { gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; }
+        body.full-screen-mode .control-btn, body.full-screen-mode select, body.full-screen-mode #librarySearch { min-width: 0; padding: 12px 14px; border-radius: 12px; font-size: 0.98rem; }
+        body.full-screen-mode .header { flex-direction: row; align-items: center; }
+        body.full-screen-mode .content-wrapper { flex-direction: row; gap: 20px; overflow: hidden; align-items: stretch; }
+        body.full-screen-mode .content-wrapper.grid-mode #library { width: 100%; min-width: 0; max-width: none; min-height: auto; }
+        body.full-screen-mode .content-wrapper.list-mode #library { width: 360px; min-width: 360px; max-width: 380px; min-height: auto; }
+        body.full-screen-mode .content-wrapper .game-card { min-height: 160px; border-radius: 18px; }
+        body.full-screen-mode .content-wrapper.list-mode .game-card { height: auto; min-height: 70px; padding: 16px 14px; }
+        body.full-screen-mode #detail-panel { width: auto; }
+        body.full-screen-mode .dp-hero { height: 420px; min-height: 420px; padding: 2.5rem 2.5rem 2.5rem 2.5rem; }
+        body.full-screen-mode .dp-play-btn { width: auto; padding: 16px 30px; font-size: 1.15rem; }
+        body.full-screen-mode .dp-info { padding: 2rem; }
+        body.full-screen-mode .dashboard-actions { padding: 1.5rem 1.5rem; }
+        body.full-screen-mode .action-buttons-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        body.full-screen-mode .dash-btn { padding: 14px 16px; font-size: 14px; border-radius: 12px; }
+        body.full-screen-mode .dp-empty { min-height: 420px; }
+        body.full-screen-mode .content-wrapper { margin-bottom: 0; }
+        .dp-empty { display: flex; align-items: center; justify-content: center; min-height: 260px; color: #555; font-size: 1.2rem; font-weight: bold; padding: 2rem; }
 
-        .content-wrapper.list-mode #detail-panel { justify-content: flex-start; }
+        .dashboard-actions { padding: 1rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; display: flex; flex-direction: column; gap: 0.85rem; }
+        .dashboard-actions h3 { font-size: 0.85rem; text-transform: uppercase; color: #aaa; margin: 0; letter-spacing: 0.08em; }
+        .dashboard-actions p { margin: 0; color: #888; font-size: 0.9rem; line-height: 1.45; }
+        .action-buttons-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+        .dash-btn { flex: 1; background: #111; color: white; border: 1px solid #333; padding: 14px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 0.75rem; }
+        .dash-btn:hover, body.controller-mode .dash-btn.focused { background: rgba(0,120,212,0.18); border-color: rgba(0,120,212,0.4); color: white; transform: translateY(-1px); }
+
+        .content-wrapper.list-mode #detail-panel { justify-content: flex-start; flex: 1 1 auto; }
         .content-wrapper.list-mode #dp-content-state { justify-content: flex-start !important; }
-        .content-wrapper.list-mode .dp-hero { height: 380px; justify-content: flex-end; background-size: cover !important; background-position: center !important; flex-shrink: 0; }
+        .content-wrapper.list-mode .dp-hero { min-height: 320px; justify-content: flex-end; background-size: cover !important; background-position: center !important; flex-shrink: 0; }
+        .content-wrapper.list-mode .dp-screenshots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .content-wrapper.list-mode .dp-content { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 15px; width: 100%; }
         .content-wrapper.list-mode .dp-info { flex: 1; overflow-y: auto; }
 
@@ -83,14 +134,6 @@
         .dash-btn:hover, body.controller-mode .dash-btn.focused { background: var(--accent); border-color: var(--accent); transform: scale(1.02); }
 
         /* PROGRESS BAR */
-        .progress-container { display: none; gap: 12px; padding: 12px 16px; background: rgba(33, 150, 243, 0.15); border-left: 3px solid #2196f3; margin-bottom: 1rem; border-radius: 6px; }
-        .progress-container.active { display: flex; flex-direction: column; }
-        .progress-info { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #fff; }
-        .progress-bar-bg { width: 100%; height: 8px; background: rgba(255,255,255,0.2); border-radius: 4px; overflow: hidden; }
-        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2196f3, #21cbf3); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
-        .progress-status { font-size: 0.85rem; color: #aaa; }
-        .cancel-update-btn { background: rgba(255, 68, 68, 0.2); color: #ff4444; border: 1px solid #ff4444; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
-        .cancel-update-btn:hover { background: rgba(255, 68, 68, 0.3); }
 
         /* MODALS */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
@@ -100,9 +143,6 @@
         .menu-btn.focused, .menu-btn:hover { border-color: var(--accent); background: #252525; transform: scale(1.01); }
         #renameInput { width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.2rem; text-align: center; margin-bottom: 20px; transition: border-color 0.2s; }
         #renameInput.focused { border-color: var(--accent); }
-        #platformGameNameInput { width: 100%; padding: 12px; background: #1a1a1a; color: white; border: 2px solid #333; border-radius: 6px; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s; }
-        #platformGameNameInput.focused { border-color: var(--accent); }
-
         /* CONTROLLER FOOTER */
         .footer { position: fixed; bottom: -120px; left: 0; right: 0; background: rgba(10,10,10,0.98); border-top: 1px solid #333; padding: 1.2rem 2.5rem; display: flex; gap: 3rem; z-index: 1000; transition: bottom 0.4s; }
         body.controller-mode .footer { bottom: 0; }
@@ -129,51 +169,33 @@
                 <option value="added">Recently Added</option>
                 <option value="recent">Recently Played</option>
             </select>
-            <button class="control-btn" id="viewToggleBtn" data-header-idx="2">🔲 Grid</button>
+            <button class="control-btn" id="fullScreenBtn" data-header-idx="2">⛶ Full Screen</button>
             <button class="control-btn" id="addBtn" data-header-idx="3">+ Add</button>
-            <button class="control-btn" id="apiSetupBtn" data-header-idx="4">⚙️ API</button>
-            <button class="control-btn" id="settingsBtn" data-header-idx="5">🎨 Settings</button>
+            <button class="control-btn" id="settingsBtn" data-header-idx="4">🎨 Settings</button>
         </div>
     </div>
 
-    <div class="content-wrapper grid-mode" id="contentWrapper">
+    <div class="content-wrapper list-mode" id="contentWrapper">
         <div id="library"></div>
         
         <div id="detail-panel">
             <div id="dp-empty-state" class="dp-empty">Select a game from the list</div>
-            <div id="dp-content-state" style="display: none; height: 100%; flex-direction: column;">
+            <div id="dp-content-state" style="display: none; flex-direction: column;">
                 <div class="dp-hero" id="dpHero">
                     <div class="dp-content">
-                        <h1 class="dp-title" id="dpTitle">Game Name</h1>
-                        <button class="dp-play-btn" id="dpPlayBtn">PLAY</button>
+                        <div class="dp-title-block">
+                            <h1 class="dp-title" id="dpTitle">Game Name</h1>
+                            <div class="dp-subtitle" id="dpHeroSubtitle">Select a game to preview</div>
+                        </div>
                     </div>
+                    <div id="dpLogoContainer" style="position: absolute; left: 2rem; bottom: 2rem; z-index: 4; display: flex; align-items: center; gap: 12px;"></div>
+                </div>
+                <div class="dp-action-row">
+                    <button class="dp-play-btn" id="dpPlayBtn">PLAY</button>
                 </div>
                 <div class="dp-info">
-                    <div class="progress-container" id="progressContainer">
-                        <div class="progress-info">
-                            <span id="progressLabel">Checking for updates...</span>
-                            <span id="progressPercent">0%</span>
-                        </div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill" id="progressBarFill"></div>
-                        </div>
-                        <div style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
-                            <span class="progress-status" id="progressStatus">Initializing...</span>
-                            <button class="cancel-update-btn" id="cancelUpdateBtn">Cancel</button>
-                        </div>
-                    </div>
-                    <div id="updateStatusContainer" style="display: none;">
-                        <div class="update-status">
-                            <div class="update-indicator"></div>
-                            <span id="updateStatusText">Checking for updates...</span>
-                        </div>
-                    </div>
                     <div class="game-dashboard-pane">
                         <div class="dashboard-grid">
-                            <div class="dash-card text-span-full">
-                                <span class="dash-label">📂 EXECUTABLE PATH</span>
-                                <span class="dash-value path-text" id="dashPath">No application selected</span>
-                            </div>
                             <div class="dash-card text-span-full">
                                 <span class="dash-label">🕒 LAST PLAYED</span>
                                 <span class="dash-value" id="dashLastPlayed">Never</span>
@@ -182,7 +204,6 @@
                         <div class="dashboard-actions">
                             <h3>Library Management Shortcuts</h3>
                             <div class="action-buttons-row">
-                                <button class="dash-btn" id="dashBtnCheckUpdate">🔄 Update</button>
                                 <button class="dash-btn" id="dashBtnOpenFolder">📁 Browse Files</button>
                                 <button class="dash-btn" id="dashBtnChangePath">🔗 Change Path</button>
                             </div>
@@ -213,6 +234,7 @@
             <div class="menu-options" id="customizeOptionsList">
                 <div class="menu-btn" data-action="cover">Change Cover</div>
                 <div class="menu-btn" data-action="icon">Change Icon</div>
+                <div class="menu-btn" data-action="logo">Change Logo</div>
                 <div class="menu-btn" data-action="background">Change Background</div>
                 <div class="menu-btn" data-action="cancel" style="border-top: 1px solid #333; margin-top: 5px; text-align: center;">Cancel</div>
             </div>
@@ -230,53 +252,6 @@
         </div>
     </div>
 
-    <div id="apiKeyModal" class="modal">
-        <div class="modal-content" style="max-width: 450px;">
-            <h2 style="color:var(--accent); margin-top:0;">SteamGridDB API Key</h2>
-            <input type="password" id="modalApiKeyInput" placeholder="Paste your personal API key here..." class="api-input">
-            <div style="display: flex; gap: 12px;" id="apiActionsRow">
-                <button class="menu-btn" id="confirmApiBtn" style="flex: 1; text-align: center;" data-api-idx="0">Save</button>
-                <button class="menu-btn" id="cancelApiBtn" style="flex: 1; text-align: center;" data-api-idx="1">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="platformModal" class="modal">
-        <div class="modal-content" style="max-width: 500px;">
-            <h2 style="color:var(--accent); margin-top:0;">Confirm Game Platform</h2>
-            <div style="background: #141414; border: 1px solid #252525; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1rem;">
-                    <span style="font-size: 2rem;" id="platformIcon">🎮</span>
-                    <div>
-                        <div style="font-size: 0.75rem; color: #888; text-transform: uppercase;">Detected Platform</div>
-                        <div style="font-size: 1.2rem; font-weight: bold; color: #fff;" id="platformName">Steam</div>
-                    </div>
-                </div>
-                <div id="platformDetails" style="font-size: 0.9rem; color: #aaa; padding-top: 1rem; border-top: 1px solid #333;">
-                    <div id="platformDetailText">Steam App ID will be automatically detected</div>
-                </div>
-            </div>
-            <div style="margin-bottom: 1.5rem;">
-                <label style="display: block; font-size: 0.85rem; color: #888; text-transform: uppercase; margin-bottom: 0.5rem; letter-spacing: 0.05em;">Game Name</label>
-                <input type="text" id="platformGameNameInput" placeholder="Game Name" style="width: 100%; padding: 12px; background: #1a1a1a; color: white; border: 2px solid #333; border-radius: 6px; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s;">
-            </div>
-            <div style="font-size: 0.85rem; color: #999; margin-bottom: 1.5rem; padding: 12px; background: rgba(33, 150, 243, 0.1); border-radius: 6px; border-left: 3px solid #2196f3;">
-                The launcher will check this platform for updates. You can change this later if needed.
-            </div>
-            <div style="display: flex; gap: 12px;" id="platformActionsRow">
-                <button class="menu-btn" id="confirmPlatformBtn" style="flex: 1; text-align: center; background: #2196f3; border-color: #2196f3;">Confirm</button>
-                <button class="menu-btn" id="changePlatformBtn" style="flex: 1; text-align: center;">Change</button>
-            </div>
-            <div id="platformOverrideOptions" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #333;">
-                <div style="font-size: 0.85rem; color: #888; margin-bottom: 0.75rem; text-transform: uppercase;">Or select manually:</div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <button class="menu-btn" data-platform-override="steam" style="text-align: left;">Steam</button>
-                    <button class="menu-btn" data-platform-override="xbox" style="text-align: left;">Xbox App / Game Pass</button>
-                    <button class="menu-btn" data-platform-override="custom" style="text-align: left;">Custom / Other</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <div id="settingsModal" class="modal">
         <div class="modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto; text-align: left;">
@@ -308,6 +283,12 @@
                         <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Card Background</label>
                         <input type="color" id="colorCard" style="width: 100%; height: 40px; border: 2px solid #333; border-radius: 6px; cursor: pointer;">
                     </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="useLogoOnHero" />
+                        <span style="font-size: 0.9rem; color: #ddd;">Use game logo on hero</span>
+                    </label>
                 </div>
             </div>
 
@@ -346,54 +327,6 @@
         <div class="glyph-item"><div id="footerBGlyph" class="glyph b"></div> <span id="bLabel">Back</span></div>
     </div>
 
-    <script>
-        const gameUpdateStatus = {};
-        
-        window.checkGameUpdate = async function(gameId, gamePath) {
-            if (!gamePath) return null;
-            const statusEl = document.getElementById('updateStatusContainer');
-            const statusText = document.getElementById('updateStatusText');
-            const indicator = statusEl?.querySelector('.update-indicator');
-            
-            if (statusEl) {
-                statusEl.style.display = 'block';
-                statusText.textContent = 'Checking for updates...';
-                indicator?.classList.add('checking');
-            }
-            
-            try {
-                if (window.ipcRenderer) {
-                    const result = await window.ipcRenderer.invoke('check-game-update', {
-                        gameId,
-                        gamePath
-                    });
-                    gameUpdateStatus[gameId] = result;
-                    return result;
-                }
-            } catch (err) {
-                console.error('Update check failed:', err);
-            }
-        };
-        
-        window.displayUpdateStatus = function(status) {
-            const statusEl = document.getElementById('updateStatusContainer');
-            const statusText = document.getElementById('updateStatusText');
-            const indicator = statusEl?.querySelector('.update-indicator');
-            
-            if (!statusEl) return;
-            statusEl.style.display = 'block';
-            
-            if (status.hasUpdate) {
-                statusText.textContent = `Update available: v${status.latestVersion}`;
-                indicator?.classList.remove('up-to-date', 'checking');
-                indicator?.style.background = '#ff9800';
-            } else {
-                statusText.textContent = `Up to date (v${status.currentVersion})`;
-                indicator?.classList.add('up-to-date');
-                indicator?.classList.remove('checking');
-            }
-        };
-    </script>
     <script src="renderer.js"></script>
 </body>
 </html>

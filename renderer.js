@@ -4,23 +4,21 @@ const path = require('path');
 
 const library = document.getElementById('library');
 const contentWrapper = document.getElementById('contentWrapper');
-const viewToggleBtn = document.getElementById('viewToggleBtn');
+const fullScreenBtn = document.getElementById('fullScreenBtn');
 const sortSelect = document.getElementById('sortSelect');
 const librarySearch = document.getElementById('librarySearch'); 
 const addBtn = document.getElementById('addBtn');
-const apiSetupBtn = document.getElementById('apiSetupBtn');
-const modalApiKeyInput = document.getElementById('modalApiKeyInput');
 
 const SAVE_PATH = './library.json';
 
 let gameData = {};
-let apiKey = '';
 let sortedIds = [];
 let currentEditingId = null;
 const iconCache = {}; 
 
-let viewMode = localStorage.getItem('hb-view-mode') || 'grid';
+let viewMode = 'list';
 let selectedListId = null;
+let isFullScreenPreviewActive = false;
 
 let isControllerMode = false;
 let currentZone = 'library'; 
@@ -28,23 +26,20 @@ let focusIndex = 0;
 let headerFocusIndex = 0;
 let modalFocusIndex = 0;
 let renameFocusIndex = 0;
-let apiModalFocusIndex = 0;
 let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
-let pendingGamePlatform = null; 
+
 
 if (fs.existsSync(SAVE_PATH)) {
     try { 
         const parsed = JSON.parse(fs.readFileSync(SAVE_PATH));
-        if (parsed.gameData && parsed.apiKey !== undefined) {
+        if (parsed.gameData) {
             gameData = parsed.gameData;
-            apiKey = parsed.apiKey;
         } else {
             gameData = parsed;
             if (gameData.gameData) delete gameData.gameData;
-            if (gameData.apiKey) delete gameData.apiKey;
         }
         Object.values(gameData).forEach(d => { 
             if (d && typeof d === 'object') {
@@ -62,105 +57,204 @@ if (fs.existsSync(SAVE_PATH)) {
 }
 
 const saveToDisk = () => { 
-    fs.writeFileSync(SAVE_PATH, JSON.stringify({ gameData, apiKey }, null, 2)); 
-    updateAPIButtonVisibility();
+    fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2)); 
 };
-
-function updateAPIButtonVisibility() {
-    if (apiKey) {
-        apiSetupBtn.style.display = 'none';
-        if (headerFocusIndex === 4) headerFocusIndex = 0;
-    } else {
-        apiSetupBtn.style.display = 'inline-block';
-    }
-}
-
-apiSetupBtn.onclick = () => {
-    modalApiKeyInput.value = apiKey;
-    openModal('apiKey');
-};
-
-ipcRenderer.on('trigger-api-key-prompt', () => {
-    modalApiKeyInput.value = apiKey;
-    openModal('apiKey');
-});
-
-const handleApiSave = () => {
-    apiKey = modalApiKeyInput.value.trim();
-    saveToDisk();
-    closeModal();
-    
-    if (apiKey) {
-        alert("API Key Saved. Please note that it can take a few seconds for your new games to appear in your library as the Artworks are fetched from SteamGridDB.\n\n If you have any issues with fetching artworks, please ensure your API Key is valid and that you have not exceeded your daily request limit on SteamGridDB. \n\n You can remove or update your API key by pressing 'File > Set SteamGridDB API Key' in the menu bar.");
-    } else {
-        alert("API Key cleared. You will not be able to fetch new artworks from SteamGridDB until you add a valid API Key.");
-    }
-};
-
-document.getElementById('confirmApiBtn').onclick = handleApiSave;
-document.getElementById('cancelApiBtn').onclick = closeModal;
 
 let currentSettings = { theme: 'dark', customColors: {}, customFonts: {}, customLayout: {} };
 
-const loadSettings = async () => {
+function ensureSettingsDefaults(settings) {
+    if (!settings || typeof settings !== 'object') settings = {};
+    settings.theme ??= 'dark';
+    settings.customColors = settings.customColors || {};
+    settings.customFonts = settings.customFonts || {};
+    settings.customLayout = settings.customLayout || {};
+    settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#1a1a1a';
+    settings.customColors.surface ??= getComputedStyle(document.documentElement).getPropertyValue('--card-bg') || '#2a2a2a';
+    settings.customColors.text ??= getComputedStyle(document.documentElement).getPropertyValue('--text') || '#e0e0e0';
+    settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#6366f1';
+    settings.customFonts.family ??= document.body.style.fontFamily || '';
+    settings.customFonts.sizeBase ??= document.body.style.fontSize || '';
+    settings.customLayout.fontSize ??= settings.customLayout.fontSize || 'medium';
+    settings.customLayout.useLogoOnHero ??= false;
+    return settings;
+}
+
+async function loadSettings() {
     try {
-        currentSettings = await ipcRenderer.invoke('get-settings');
+        const loaded = await ipcRenderer.invoke('get-settings');
+        currentSettings = ensureSettingsDefaults(loaded);
         applySettings(currentSettings);
     } catch (err) {
         console.error('Error loading settings:', err);
+        currentSettings = ensureSettingsDefaults(currentSettings);
+        applySettings(currentSettings);
     }
-};
+}
 
 const applySettings = (settings) => {
     const root = document.documentElement;
-    const colors = settings.customColors;
+    const colors = settings.customColors || {};
     
     if (colors.background) root.style.setProperty('--bg', colors.background);
     if (colors.surface) root.style.setProperty('--card-bg', colors.surface);
     if (colors.text) root.style.setProperty('--text', colors.text);
     if (colors.accent) root.style.setProperty('--accent', colors.accent);
     
-    const fonts = settings.customFonts;
+    const fonts = settings.customFonts || {};
     if (fonts.sizeBase) document.body.style.fontSize = fonts.sizeBase;
     if (fonts.family) document.body.style.fontFamily = fonts.family;
     
-    const layout = settings.customLayout;
-    if (layout.compactMode) document.body.classList.add('compact-mode');
+    const layout = settings.customLayout || {};
     if (layout.cardSize) document.body.dataset.cardSize = layout.cardSize;
+    if (layout.fontSize) document.body.style.fontSize = layout.fontSize;
+
+    // Derived theme values
+    try {
+        const bg = (colors.background || getComputedStyle(root).getPropertyValue('--bg') || '#000').trim();
+        const surface = (colors.surface || getComputedStyle(root).getPropertyValue('--card-bg') || '#111').trim();
+        const isPreset = settings.theme && settings.theme !== 'custom';
+
+        if (isPreset) {
+            // For preset themes compute header color automatically from surface
+            const headerColor = getAutoHeaderTextColor(surface || bg);
+            root.style.setProperty('--header-text', headerColor);
+            // Apply header text color inline so the preset enforces contrast
+            const headerEl = document.getElementById('appHeader');
+            if (headerEl) {
+                try {
+                    headerEl.style.color = headerColor;
+                    const headerTitle = headerEl.querySelector('h1');
+                    if (headerTitle) headerTitle.style.color = headerColor;
+                const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
+                    controls.forEach(c => { try { c.style.color = headerColor; } catch (e) {} });
+                } catch (e) { /* ignore */ }
+            }
+            // Apply same color to card text elements so header and cards match for presets
+            try {
+                const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
+                cardTextSelectors.forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => { try { el.style.color = headerColor; } catch (e) {} });
+                });
+            } catch (e) { /* ignore */ }
+        } else {
+            // Custom theme: respect manual `text` color set by user and DO NOT auto-compute
+            const manualText = (colors.text || getComputedStyle(root).getPropertyValue('--text') || '#ffffff').trim();
+            root.style.setProperty('--header-text', manualText);
+            // Apply manual text color inline (overrides any previous preset inline styles)
+            try {
+                const headerEl = document.getElementById('appHeader');
+                if (headerEl) {
+                    headerEl.style.color = manualText;
+                    const headerTitle = headerEl.querySelector('h1');
+                    if (headerTitle) headerTitle.style.color = manualText;
+                const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
+                    controls.forEach(c => { try { c.style.color = manualText; } catch (e) {} });
+                }
+            } catch (e) {}
+            // Apply manual text color to card elements and menus as well
+            try {
+                const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
+                cardTextSelectors.forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => { try { el.style.color = manualText; } catch (e) {} });
+                });
+            } catch (e) {}
+        }
+
+        let hover;
+        try {
+            const surfLum = luminance(hexToRgb(surface));
+            hover = surfLum < 0.5 ? adjustHex(surface, 8) : adjustHex(surface, -6);
+        } catch (e) {
+            hover = 'rgba(255,255,255,0.06)';
+        }
+        root.style.setProperty('--card-bg-hover', hover);
+    } catch (e) { console.error('Error computing derived theme colors:', e); }
 };
 
+// Helpers for color math
+function hexToRgb(hex) {
+    hex = hex.replace('#','').trim();
+    if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+    const num = parseInt(hex,16);
+    return { r: (num>>16)&255, g: (num>>8)&255, b: num&255 };
+}
+
+function luminance({r,g,b}) {
+    const srgb = [r,g,b].map(v=>{
+        v/=255;
+        return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+    });
+    return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
+}
+
+function adjustHex(hex, percent) {
+    const {r,g,b} = hexToRgb(hex);
+    const amt = Math.round(255 * (percent/100));
+    const nr = Math.max(0, Math.min(255, r + amt));
+    const ng = Math.max(0, Math.min(255, g + amt));
+    const nb = Math.max(0, Math.min(255, b + amt));
+    return `#${((1<<24) + (nr<<16) + (ng<<8) + nb).toString(16).slice(1)}`;
+}
+
+function getAutoHeaderTextColor(bgHex) {
+    try {
+        const rgb = hexToRgb(bgHex);
+        const lum = luminance(rgb);
+        // Dark backgrounds -> white; medium -> grey; light -> black
+        if (lum < 0.25) return '#ffffff';
+        if (lum < 0.7) return '#888888';
+        return '#000000';
+    } catch (e) { return '#ffffff'; }
+}
+
+
+
 const showSettingsModal = async () => {
+    console.log('showSettingsModal called');
     try {
         const themes = await ipcRenderer.invoke('get-all-themes');
         const presetsContainer = document.getElementById('themePresets');
+        if (!presetsContainer) {
+            console.error('Theme presets container not found in DOM');
+            openModal('settings'); // still attempt to open modal
+            return;
+        }
         presetsContainer.innerHTML = '';
-        
+
         themes.forEach(theme => {
-            const btn = document.createElement('button');
-            btn.className = 'menu-btn';
-            btn.textContent = theme.name;
-            btn.style.cssText = `
-                background: ${theme.preview.colors.surface};
-                color: ${theme.preview.colors.text};
-                border-color: ${currentSettings.theme === theme.id ? theme.preview.colors.accent : '#333'};
-                border-width: ${currentSettings.theme === theme.id ? '3px' : '2px'};
-            `;
-            btn.onclick = async () => {
-                const preset = await ipcRenderer.invoke('get-theme-preset', theme.id);
-                currentSettings.theme = theme.id;
-                currentSettings.customColors = { ...preset.colors };
-                currentSettings.customFonts = { ...preset.fonts };
-                currentSettings.customLayout = { ...preset.layout };
-                updateColorInputs();
-                showSettingsModal();
-            };
-            presetsContainer.appendChild(btn);
+            try {
+                const btn = document.createElement('button');
+                btn.className = 'menu-btn';
+                btn.textContent = theme.name;
+                btn.style.cssText = `
+                    background: ${theme.preview.colors.surface};
+                    color: ${theme.preview.colors.text};
+                    border-color: ${currentSettings.theme === theme.id ? theme.preview.colors.accent : '#333'};
+                    border-width: ${currentSettings.theme === theme.id ? '3px' : '2px'};
+                `;
+                btn.onclick = async () => {
+                    try {
+                        const preset = await ipcRenderer.invoke('get-theme-preset', theme.id);
+                        currentSettings.theme = theme.id;
+                        currentSettings.customColors = { ...preset.colors };
+                        currentSettings.customFonts = { ...preset.fonts };
+                        currentSettings.customLayout = { ...preset.layout };
+                        updateColorInputs();
+                        // refresh visuals
+                        applySettings(currentSettings);
+                        // refresh preset buttons
+                        showSettingsModal();
+                    } catch (e) { console.error('Error applying preset:', e); }
+                };
+                presetsContainer.appendChild(btn);
+            } catch (e) { console.error('Error creating theme button:', e); }
         });
-        
+
         updateColorInputs();
         openModal('settings');
     } catch (err) {
         console.error('Error showing settings:', err);
+        try { openModal('settings'); } catch (e) { console.error('Failed to open settings modal:', e); }
     }
 };
 
@@ -171,20 +265,51 @@ const updateColorInputs = () => {
     document.getElementById('colorCard').value = currentSettings.customColors.surface || '#2a2a2a';
     document.getElementById('fontSize').value = currentSettings.customLayout?.fontSize || 'medium';
     document.getElementById('cardSize').value = currentSettings.customLayout?.cardSize || 'medium';
+    const useLogoEl = document.getElementById('useLogoOnHero');
+    if (useLogoEl) useLogoEl.checked = !!currentSettings.customLayout?.useLogoOnHero;
 };
 
 const saveSettings = async () => {
     try {
-        currentSettings.customColors.background = document.getElementById('colorBg').value;
-        currentSettings.customColors.accent = document.getElementById('colorAccent').value;
-        currentSettings.customColors.text = document.getElementById('colorText').value;
-        currentSettings.customColors.surface = document.getElementById('colorCard').value;
+        // Ensure containers exist
+        currentSettings.customColors = currentSettings.customColors || {};
         currentSettings.customLayout = currentSettings.customLayout || {};
-        currentSettings.customLayout.fontSize = document.getElementById('fontSize').value;
-        currentSettings.customLayout.cardSize = document.getElementById('cardSize').value;
-        
-        const result = await ipcRenderer.invoke('save-settings', currentSettings);
+
+        const colorBgEl = document.getElementById('colorBg');
+        const colorAccentEl = document.getElementById('colorAccent');
+        const colorTextEl = document.getElementById('colorText');
+        const colorCardEl = document.getElementById('colorCard');
+        const fontSizeEl = document.getElementById('fontSize');
+        const cardSizeEl = document.getElementById('cardSize');
+
+        if (colorBgEl) currentSettings.customColors.background = colorBgEl.value;
+        if (colorAccentEl) currentSettings.customColors.accent = colorAccentEl.value;
+        if (colorTextEl) currentSettings.customColors.text = colorTextEl.value;
+        if (colorCardEl) currentSettings.customColors.surface = colorCardEl.value;
+        if (fontSizeEl) currentSettings.customLayout.fontSize = fontSizeEl.value;
+        if (cardSizeEl) currentSettings.customLayout.cardSize = cardSizeEl.value;
+        const useLogoEl = document.getElementById('useLogoOnHero');
+        if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
+
+        // User changed colors manually -> treat as a custom theme
+        currentSettings.theme = 'custom';
+        currentSettings = ensureSettingsDefaults(currentSettings);
+
+        // Build a safe, serializable copy to send over IPC
+        const safeSettings = {
+            theme: currentSettings.theme,
+            customColors: { ...(currentSettings.customColors || {}) },
+            customFonts: { ...(currentSettings.customFonts || {}) },
+            customLayout: { ...(currentSettings.customLayout || {}) },
+            windowSize: currentSettings.windowSize || {}
+        };
+
+        console.log('Saving settings (sanitized):', safeSettings);
+
+        const result = await ipcRenderer.invoke('save-settings', safeSettings);
         if (result && result.success) {
+            // Update local settings with the sanitized version
+            currentSettings = ensureSettingsDefaults(safeSettings);
             applySettings(currentSettings);
             closeModal();
             console.log('Settings saved successfully');
@@ -197,8 +322,20 @@ const saveSettings = async () => {
     }
 };
 
-const settingsBtn = document.getElementById('settingsBtn');
-settingsBtn.onclick = showSettingsModal;
+let settingsBtn = document.getElementById('settingsBtn');
+if (!settingsBtn) settingsBtn = document.querySelector('[data-header-idx="5"]');
+if (settingsBtn) {
+    settingsBtn.onclick = (e) => {
+        try {
+            e.preventDefault();
+            showSettingsModal();
+        } catch (err) {
+            console.error('Error opening settings modal:', err);
+        }
+    };
+} else {
+    console.error('Settings button not found in DOM');
+}
 
 const ensureSettingsButtonsReady = () => {
     const saveBtn = document.getElementById('saveSettingsBtn');
@@ -221,29 +358,75 @@ const ensureSettingsButtonsReady = () => {
 ensureSettingsButtonsReady();
 
 ipcRenderer.on('settings-updated', (settings) => {
-    currentSettings = settings;
-    applySettings(settings);
+    currentSettings = ensureSettingsDefaults(settings);
+    applySettings(currentSettings);
 });
 
 loadSettings();
 
-const applyViewMode = () => {
+const applyLayoutMode = () => {
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
-    viewToggleBtn.innerText = viewMode === 'grid' ? "☰ List View" : "🔲 Grid View";
-    if (viewMode === 'list' && sortedIds.length > 0 && !selectedListId) {
-        selectListItem(sortedIds[0]);
+    if (isFullScreenPreviewActive) {
+        document.body.classList.add('full-screen-preview');
+    } else {
+        document.body.classList.remove('full-screen-preview');
     }
+    if (!isFullScreenMode) {
+        viewMode = 'list';
+        isFullScreenPreviewActive = false;
+    } else {
+        if (!isFullScreenPreviewActive) viewMode = 'grid';
+    }
+    contentWrapper.className = `content-wrapper ${viewMode}-mode`;
     renderLibrary();
 };
 
-viewToggleBtn.onclick = () => {
-    viewMode = viewMode === 'grid' ? 'list' : 'grid';
-    localStorage.setItem('hb-view-mode', viewMode);
-    applyViewMode();
+let isFullScreenMode = false;
+
+const enterFullScreenPreview = () => {
+    if (!isFullScreenMode) return;
+    isFullScreenPreviewActive = true;
+    document.body.classList.add('full-screen-preview');
+    contentWrapper.className = `content-wrapper ${viewMode}-mode`;
+    currentZone = 'detail-panel';
+    dashFocusIndex = 0;
+    applyFocus();
 };
 
+const exitFullScreenPreview = () => {
+    if (!isFullScreenPreviewActive) return;
+    isFullScreenPreviewActive = false;
+    document.body.classList.remove('full-screen-preview');
+    currentZone = 'library';
+    focusIndex = sortedIds.indexOf(selectedListId);
+    if (focusIndex < 0) focusIndex = 0;
+    applyFocus();
+};
+
+const updateFullScreenButton = (isFull) => {
+    isFullScreenMode = !!isFull;
+    if (fullScreenBtn) {
+        fullScreenBtn.innerText = isFull ? '🗗 Exit Full Screen' : '⛶ Full Screen';
+    }
+    document.body.classList.toggle('full-screen-mode', isFull);
+    if (!isFull) {
+        exitFullScreenPreview();
+    }
+    applyLayoutMode();
+};
+
+if (fullScreenBtn) {
+    fullScreenBtn.onclick = () => {
+        ipcRenderer.send('toggle-fullscreen');
+    };
+}
+
+ipcRenderer.on('fullscreen-changed', (event, isFull) => {
+    updateFullScreenButton(isFull);
+});
+
 addBtn.onclick = () => {
-    ipcRenderer.send('add-game-requested', { apiKey });
+    ipcRenderer.send('add-game-requested');
 };
 
 sortSelect.onchange = () => renderLibrary();
@@ -277,7 +460,14 @@ const selectListItem = (id) => {
     document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}')` : 'none';
     document.getElementById('dpPlayBtn').onclick = () => launchItem(id);
 
-    document.getElementById('dashPath').innerText = d.path;
+    if (isFullScreenMode) {
+        enterFullScreenPreview();
+    }
+
+    const heroSubtitle = document.getElementById('dpHeroSubtitle');
+    if (heroSubtitle) {
+        heroSubtitle.innerText = d.lastPlayed ? `Last played ${new Date(d.lastPlayed).toLocaleString()}` : 'Never played';
+    }
 
     if (d.lastPlayed) {
         document.getElementById('dashLastPlayed').innerText = new Date(d.lastPlayed).toLocaleString();
@@ -290,7 +480,22 @@ const selectListItem = (id) => {
         currentEditingId = id;
         executeAction('change-path');
     };
-    document.getElementById('dashBtnCheckUpdate').onclick = () => checkGameUpdates(id);
+    // Update functionality removed; no action bound
+
+    // Render optional logo on hero if enabled
+    try {
+        const dpLogoContainer = document.getElementById('dpLogoContainer');
+        const dpTitleEl = document.getElementById('dpTitle');
+        const logoPath = d.logo || d.icon;
+        if (currentSettings?.customLayout?.useLogoOnHero && logoPath) {
+            const imgSrc = `local-image://asset?path=${encodeURIComponent(logoPath)}&t=${Date.now()}`;
+            if (dpLogoContainer) dpLogoContainer.innerHTML = `<img src="${imgSrc}" style="height:64px; width:auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" alt="logo"/>`;
+            if (dpTitleEl) dpTitleEl.style.display = 'none';
+        } else {
+            if (dpLogoContainer) dpLogoContainer.innerHTML = '';
+            if (dpTitleEl) dpTitleEl.style.display = '';
+        }
+    } catch (e) { console.error('Error rendering hero logo:', e); }
 };
 
 async function applyListIcon(thumbEl, gameId, gameDataObj) {
@@ -341,7 +546,10 @@ function renderLibrary() {
             const hasCover = !!d.cover;
             if (hasCover) card.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(d.cover)}&t=${Date.now()}')`;
             card.innerHTML = `<div class="fav-badge">★</div> ${!hasCover ? `<div class="fallback-title">${d.name}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${d.name}</div></div>`;
-            card.onclick = () => launchItem(id);
+            card.onclick = () => {
+                if (isFullScreenMode) selectListItem(id);
+                else launchItem(id);
+            };
         } else {
             card.innerHTML = `<div class="list-thumb"></div> <div class="list-title">${d.name}</div> <div class="fav-badge" style="position:static;">★</div>`;
             applyListIcon(card.querySelector('.list-thumb'), id, d);
@@ -351,6 +559,9 @@ function renderLibrary() {
         library.appendChild(card);
     });
 
+    // Re-apply settings-derived inline styles (ensures new cards pick up header/card text color)
+    try { applySettings(currentSettings); } catch (e) { console.error('Failed to reapply settings after render:', e); }
+
     if (isControllerMode) applyFocus();
 }
 
@@ -358,7 +569,6 @@ function openModal(modalName) {
     currentZone = modalName + 'Modal';
     modalFocusIndex = 0;
     renameFocusIndex = 0;
-    apiModalFocusIndex = 0;
     document.getElementById(`${currentZone}`).style.display = 'flex';
     
     if (modalName === 'context') {
@@ -377,11 +587,9 @@ function closeModal() {
     document.getElementById('contextModal').style.display = 'none';
     document.getElementById('customizeModal').style.display = 'none';
     document.getElementById('renameModal').style.display = 'none';
-    document.getElementById('apiKeyModal').style.display = 'none';
-    document.getElementById('platformModal').style.display = 'none';
     document.getElementById('settingsModal').style.display = 'none';
     
-    if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal', 'platformModal', 'settingsModal'].includes(currentZone)) {
+    if (['contextModal', 'customizeModal', 'renameModal', 'settingsModal'].includes(currentZone)) {
         currentZone = sortedIds.length > 0 ? 'library' : 'header';
         if (isControllerMode) applyFocus();
     }
@@ -402,10 +610,6 @@ async function executeAction(action) {
         }, 
         'open-customize': () => { 
             closeModal(); 
-            if (!apiKey) {
-                alert("Please add your SteamGridDB API Key to manually adjust artwork resources.");
-                return;
-            }
             openModal('customize'); 
         },
         'open-file-location': () => { if (gObj.path) ipcRenderer.send('open-file-location', gObj.path); closeModal(); },
@@ -418,9 +622,10 @@ async function executeAction(action) {
             } 
             closeModal();
         }, 
-        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '', apiKey }); closeModal(); }, 
-        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '', apiKey }); closeModal(); }, 
-        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '', apiKey }); closeModal(); }, 
+        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '' }); closeModal(); }, 
+        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '' }); closeModal(); }, 
+        'logo': () => { ipcRenderer.send('open-logo-picker', { gameId: currentEditingId, name: gameName, type: 'logo', oldPath: gObj.logo || '' }); closeModal(); }, 
+        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '' }); closeModal(); }, 
         'remove': () => { 
             ipcRenderer.send('delete-game-assets', [gObj.cover, gObj.icon, gObj.background]);
             delete gameData[currentEditingId]; 
@@ -451,186 +656,9 @@ document.getElementById('renameInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRenameSave(); else if (e.key === 'Escape') closeModal();
 });
 
-let currentUpdateGameId = null;
-
-async function checkGameUpdates(gameId) {
-    if (!gameId || !gameData[gameId]) return;
-    const gData = gameData[gameId];
-    currentUpdateGameId = gameId;
-    
-    const progressContainer = document.getElementById('progressContainer');
-    const progressLabel = document.getElementById('progressLabel');
-    const progressStatus = document.getElementById('progressStatus');
-    const progressPercent = document.getElementById('progressPercent');
-    const progressBarFill = document.getElementById('progressBarFill');
-    const cancelBtn = document.getElementById('cancelUpdateBtn');
-    
-    progressContainer.classList.add('active');
-    progressLabel.textContent = `Checking ${gData.name} for updates...`;
-    progressStatus.textContent = `Using ${gData.platform} platform...`;
-    progressPercent.textContent = '0%';
-    progressBarFill.style.width = '0%';
-    
-    try {
-        const result = await ipcRenderer.invoke('check-game-update', {
-            gameId,
-            gamePath: gData.path,
-            platform: gData.platform || 'custom',
-            platformId: gData.platformId || null,
-            currentVersion: gData.currentVersion || '1.0.0'
-        });
-        
-        if (result.error) {
-            progressStatus.textContent = `Error: ${result.error}`;
-            progressLabel.textContent = 'Update check failed';
-            return;
-        }
-
-        gData.currentVersion = result.currentVersion;
-        gData.latestVersion = result.latestVersion;
-        
-        if (result.hasUpdate) {
-            progressLabel.textContent = `Update available for ${gData.name}`;
-            progressStatus.textContent = `${result.updateReason || `Current: ${result.currentVersion} → Latest: ${result.latestVersion}`}`;
-            progressPercent.textContent = '✓';
-            progressBarFill.style.width = '100%';
-            cancelBtn.style.display = 'none';
-
-            const card = document.getElementById(gameId);
-            if (card) card.classList.add('has-update');
-
-            setTimeout(() => {
-                alert(`Update available for ${gData.name}!\n\n${result.updateReason || `Current: ${result.currentVersion}\nLatest: ${result.latestVersion}`}\n\nPlease use the ${gData.platform.toUpperCase()} launcher to install the update.`);
-            }, 500);
-        } else {
-            progressLabel.textContent = `${gData.name} is up to date`;
-            progressStatus.textContent = `Version: ${result.currentVersion}`;
-            progressPercent.textContent = '✓';
-            progressBarFill.style.width = '100%';
-            cancelBtn.style.display = 'none';
-            
-            const card = document.getElementById(gameId);
-            if (card) card.classList.remove('has-update');
-        }
-        
-        saveToDisk();
-    } catch (err) {
-        console.error('Update check error:', err);
-        progressStatus.textContent = `Failed: ${err.message}`;
-        progressLabel.textContent = 'Update check failed';
-        cancelBtn.style.display = 'inline-block';
-    }
-
-    setTimeout(() => {
-        if (progressContainer.classList.contains('active') && !progressStatus.textContent.includes('Error') && !progressStatus.textContent.includes('Failed')) {
-            progressContainer.classList.remove('active');
-        }
-    }, 5000);
-}
-
-document.getElementById('cancelUpdateBtn')?.addEventListener('click', async () => {
-    if (currentUpdateGameId) {
-        await ipcRenderer.invoke('cancel-game-update', currentUpdateGameId);
-        const progressContainer = document.getElementById('progressContainer');
-        progressContainer.classList.remove('active');
-        currentUpdateGameId = null;
-    }
-});
-
-document.getElementById('platformGameNameInput')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        document.getElementById('confirmPlatformBtn').click();
-    } else if (e.key === 'Escape') {
-        closePlatformModal();
-    }
-});
-
-ipcRenderer.on('update-progress', (event, { gameId, progress, downloadedSize, totalSize, speed }) => {
-    if (gameId !== currentUpdateGameId) return;
-    
-    const progressBarFill = document.getElementById('progressBarFill');
-    const progressPercent = document.getElementById('progressPercent');
-    const progressStatus = document.getElementById('progressStatus');
-    
-    progressBarFill.style.width = `${progress}%`;
-    progressPercent.textContent = `${progress}%`;
-    
-    const downloadedMB = (downloadedSize / 1024 / 1024).toFixed(2);
-    const totalMB = (totalSize / 1024 / 1024).toFixed(2);
-    progressStatus.textContent = `${downloadedMB}MB / ${totalMB}MB (${speed}MB/s)`;
-});
-
-async function detectAndShowPlatform(gameId, name, gamePath, cover, icon, background) {
-    try {
-        const result = await ipcRenderer.invoke('detect-game-platform', gamePath);
-
-        pendingGamePlatform = {
-            id: gameId,
-            name,
-            path: gamePath,
-            cover,
-            icon,
-            background,
-            detectedPlatform: result.platform,
-            detectedPlatformId: result.platformId || '',
-            confidence: result.confidence
-        };
-
-        showPlatformModal(result);
-    } catch (err) {
-        console.error('Platform detection error:', err);
-
-        addGameWithPlatform('custom', null);
-    }
-}
-
-function showPlatformModal(detectionResult) {
-    const modal = document.getElementById('platformModal');
-    const icon = document.getElementById('platformIcon');
-    const name = document.getElementById('platformName');
-    const details = document.getElementById('platformDetailText');
-    const nameInput = document.getElementById('platformGameNameInput');
-    
-    const platformInfo = {
-        steam: { icon: '🎮', name: 'Steam', detail: `App ID: ${detectionResult.platformId || 'Auto-detect'}` },
-        xbox: { icon: '🎮', name: 'Xbox App / Game Pass', detail: `Package: ${detectionResult.platformId || 'Auto-detect'}` },
-        custom: { icon: '⚙️', name: 'Custom / Other', detail: 'No launcher detected' }
-    };
-
-    const info = platformInfo[detectionResult.platform] || platformInfo.custom;
-    icon.textContent = info.icon;
-    name.textContent = info.name;
-    details.textContent = info.detail;
-
-    let displayName = pendingGamePlatform.name;
-    if (displayName.toLowerCase().endsWith('.exe')) {
-        displayName = displayName.slice(0, -4);
-    }
-    nameInput.value = displayName;
-
-    document.getElementById('platformOverrideOptions').style.display = 'none';
-    
-    currentZone = 'platformModal';
-    modalFocusIndex = 0;
-    modal.style.display = 'flex';
-    if (isControllerMode) applyFocus();
-}
-
-function closePlatformModal() {
-    document.getElementById('platformModal').style.display = 'none';
-    currentZone = 'library';
-    pendingGamePlatform = null;
-}
-
-function addGameWithPlatform(platform, platformId) {
-    if (!pendingGamePlatform) return;
-
-    const editedName = document.getElementById('platformGameNameInput').value.trim();
-    const gameName = editedName || pendingGamePlatform.name;
-    
-    const { id, path, cover, icon, background } = pendingGamePlatform;
+function addGameToLibrary({ id, name, path, cover, icon, background }) {
     gameData[id] = {
-        name: gameName,
+        name,
         path,
         favorite: false,
         cover,
@@ -639,40 +667,17 @@ function addGameWithPlatform(platform, platformId) {
         lastPlayed: 0,
         currentVersion: '1.0.0',
         latestVersion: '1.0.0',
-        platform: platform || 'custom',
-        platformId: platformId || null
+        platform: 'custom',
+        platformId: null
     };
-    
+
     saveToDisk();
-    closePlatformModal();
     renderLibrary();
     if (viewMode === 'list') selectListItem(id);
 }
 
-document.getElementById('confirmPlatformBtn')?.addEventListener('click', () => {
-    if (pendingGamePlatform) {
-        const { detectedPlatform, detectedPlatformId } = pendingGamePlatform;
-        addGameWithPlatform(detectedPlatform, detectedPlatformId);
-    }
-});
-
-document.getElementById('changePlatformBtn')?.addEventListener('click', () => {
-    document.getElementById('platformOverrideOptions').style.display = 'block';
-});
-
-document.querySelectorAll('[data-platform-override]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const platform = e.target.dataset.platformOverride;
-        let platformId = null;
-        
-        if (platform === 'steam' && pendingGamePlatform?.detectedPlatformId) {
-            platformId = pendingGamePlatform.detectedPlatformId;
-        } else if (platform === 'xbox' && pendingGamePlatform?.detectedPlatformId) {
-            platformId = pendingGamePlatform.detectedPlatformId;
-        }
-        
-        addGameWithPlatform(platform, platformId);
-    });
+ipcRenderer.on('add-game-confirmed', (event, newGameObj) => {
+    addGameToLibrary(newGameObj);
 });
 
 document.querySelectorAll('.menu-btn[data-action]').forEach(btn => {
@@ -708,8 +713,12 @@ function setControllerActive(state) {
 
 window.addEventListener('mousemove', () => setControllerActive(false));
 window.addEventListener('keydown', (e) => {
-    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput') && document.activeElement !== modalApiKeyInput) {
+    if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput')) {
         setControllerActive(false);
+    }
+    if (e.key === 'Escape' && isFullScreenPreviewActive) {
+        exitFullScreenPreview();
+        e.preventDefault();
     }
 });
 
@@ -732,7 +741,7 @@ function updateGlyphs(gamepadId) {
 function applyFocus() {
     if (!isControllerMode) return;
 
-    document.querySelectorAll('.game-card, .menu-btn, #renameInput, #platformGameNameInput, .dash-btn, #dpPlayBtn, #modalApiKeyInput').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn').forEach(el => el.classList.remove('focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (currentZone === 'contextModal') {
@@ -752,36 +761,6 @@ function applyFocus() {
             renameInputEl.blur();
             const actionBtns = document.querySelectorAll('#renameActionsRow .menu-btn');
             if (actionBtns[renameFocusIndex - 1]) actionBtns[renameFocusIndex - 1].classList.add('focused');
-        }
-    }
-    else if (currentZone === 'apiKeyModal') {
-        const apiInputEl = document.getElementById('modalApiKeyInput');
-        if (apiModalFocusIndex === 0) {
-            apiInputEl.classList.add('focused');
-            apiInputEl.focus();
-        } else {
-            apiInputEl.blur();
-            const actionBtns = document.querySelectorAll('#apiActionsRow .menu-btn');
-            if (actionBtns[apiModalFocusIndex - 1]) actionBtns[apiModalFocusIndex - 1].classList.add('focused');
-        }
-    }
-    else if (currentZone === 'platformModal') {
-        const platformBtns = document.querySelectorAll('#platformActionsRow .menu-btn, [data-platform-override]');
-        if (document.getElementById('platformOverrideOptions').style.display === 'none') {
-
-            if (modalFocusIndex === 0) {
-                document.getElementById('platformGameNameInput').classList.add('focused');
-                document.getElementById('platformGameNameInput').focus();
-            } else {
-                document.getElementById('platformGameNameInput').blur();
-                const mainBtns = document.querySelectorAll('#platformActionsRow .menu-btn');
-                if (mainBtns[modalFocusIndex - 1]) mainBtns[modalFocusIndex - 1].classList.add('focused');
-            }
-        } else {
-
-            const overrideBtns = document.querySelectorAll('[data-platform-override]');
-            const idx = modalFocusIndex - 2;
-            if (overrideBtns[idx]) overrideBtns[idx].classList.add('focused');
         }
     }
     else if (currentZone === 'header') {
@@ -858,27 +837,6 @@ function handleGamepadLoop() {
                 if (right && renameFocusIndex === 1) { renameFocusIndex = 2; moved = true; }
                 if (left && renameFocusIndex === 2) { renameFocusIndex = 1; moved = true; }
             }
-            else if (currentZone === 'apiKeyModal') {
-                if (down && apiModalFocusIndex === 0) { apiModalFocusIndex = 1; moved = true; }
-                if (up && apiModalFocusIndex > 0) { apiModalFocusIndex = 0; moved = true; }
-                if (right && apiModalFocusIndex === 1) { apiModalFocusIndex = 2; moved = true; }
-                if (left && apiModalFocusIndex === 2) { apiModalFocusIndex = 1; moved = true; }
-            }
-            else if (currentZone === 'platformModal') {
-                const overrideShown = document.getElementById('platformOverrideOptions').style.display !== 'none';
-                if (overrideShown) {
-                    const overrideBtns = document.querySelectorAll('[data-platform-override]');
-                    const idx = modalFocusIndex - 3;
-                    if (down && idx + 1 < overrideBtns.length) { modalFocusIndex++; moved = true; }
-                    if (up && idx > 0) { modalFocusIndex--; moved = true; }
-                    if (up && idx === 0) { modalFocusIndex = 2; moved = true; } 
-                } else {
-                    if (down && modalFocusIndex === 0) { modalFocusIndex = 1; moved = true; }
-                    if (up && modalFocusIndex > 0) { modalFocusIndex = 0; moved = true; }
-                    if (right && modalFocusIndex === 1) { modalFocusIndex = 2; moved = true; }
-                    if (left && modalFocusIndex === 2) { modalFocusIndex = 1; moved = true; }
-                }
-            }
             else if (currentZone === 'header') {
                 const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
                 let currentVisIdx = headerElements.findIndex(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
@@ -941,26 +899,6 @@ function handleGamepadLoop() {
                 if (renameFocusIndex === 1) handleRenameSave();
                 else if (renameFocusIndex === 2) closeModal();
             }
-            else if (currentZone === 'apiKeyModal') {
-                if (apiModalFocusIndex === 1) handleApiSave();
-                else if (apiModalFocusIndex === 2) closeModal();
-            }
-            else if (currentZone === 'platformModal') {
-                const overrideShown = document.getElementById('platformOverrideOptions').style.display !== 'none';
-                if (overrideShown) {
-                    const overrideBtns = document.querySelectorAll('[data-platform-override]');
-                    const idx = modalFocusIndex - 3;
-                    if (overrideBtns[idx]) overrideBtns[idx].click();
-                } else {
-                    if (modalFocusIndex === 0) {
-                        
-                    } else if (modalFocusIndex === 1) {
-                        document.getElementById('confirmPlatformBtn').click();
-                    } else if (modalFocusIndex === 2) {
-                        document.getElementById('changePlatformBtn').click();
-                    }
-                }
-            }
             else if (currentZone === 'header') { 
                 const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
                 const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
@@ -980,7 +918,7 @@ function handleGamepadLoop() {
         }
 
         if (pressedB) {
-            if (['contextModal', 'customizeModal', 'renameModal', 'apiKeyModal', 'platformModal'].includes(currentZone)) {
+            if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {
                 closeModal();
             } else if (currentZone === 'library') {
                 currentZone = 'header'; 
@@ -988,7 +926,11 @@ function handleGamepadLoop() {
                 headerFocusIndex = vis.length > 0 ? parseInt(vis[0].dataset.headerIdx) : 0;
                 applyFocus();
             } else if (currentZone === 'detail-panel') {
-                currentZone = 'library'; applyFocus();
+                if (isFullScreenPreviewActive) {
+                    exitFullScreenPreview();
+                } else {
+                    currentZone = 'library'; applyFocus();
+                }
             }
         }
 
@@ -1005,12 +947,7 @@ function handleGamepadLoop() {
 ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); } });
-ipcRenderer.on('add-game-confirmed', (event, newGameObj) => { 
-    const { id, name, path, cover, background, icon } = newGameObj; 
-    
-    detectAndShowPlatform(id, name, path, cover, icon, background);
-});
+ipcRenderer.on('logo-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].logo = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
 
-applyViewMode();
-updateAPIButtonVisibility();
+applyLayoutMode();
 requestAnimationFrame(handleGamepadLoop);

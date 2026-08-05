@@ -33,13 +33,13 @@
 <body>
     <h2 id="pickerTitle">Select Asset</h2>
     <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="Search game...">
-        <button id="searchBtn" onclick="searchGame()">Search</button>
+        <input type="text" id="searchInput" placeholder="Choose a local image file..." readonly>
+        <button id="chooseBtn" onclick="chooseAsset()">Browse</button>
     </div>
-    <div id="results"></div>
+    <div id="results" style="padding: 20px; color: #888;">Select a local image file to apply as the asset.</div>
 
     <div class="picker-footer">
-        <div class="glyph-item"><div id="selectGlyph" class="glyph a"></div> Select / Search</div>
+        <div class="glyph-item"><div id="selectGlyph" class="glyph a"></div> Browse</div>
         <div class="glyph-item"><div id="cancelGlyph" class="glyph b"></div> Cancel</div>
     </div>
 
@@ -48,9 +48,7 @@
         let currentGameId = null;
         let currentType = 'cover';
         let currentOldPath = null;
-        let userApiKey = '';
-        let itemsCount = 0;
-        let isGridMode = false;
+        let selectedImagePath = null;
 
         let isControllerMode = false;
         let currentZone = 'header';
@@ -59,66 +57,36 @@
         let lastButtonState = new Array(20).fill(false);
         let lastActiveGamepadIndex = null;
 
-        document.getElementById('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchGame(); });
+        document.getElementById('chooseBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter') chooseAsset(); });
 
         ipcRenderer.on('init-picker', (e, data) => {
-            currentGameId = data.gameId; 
+            currentGameId = data.gameId;
             currentType = data.type || 'cover';
             currentOldPath = data.oldPath || null;
-            userApiKey = data.apiKey || '';
             document.getElementById('searchInput').value = data.name;
             const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background' };
             document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
-            searchGame();
         });
 
-        async function searchGame() {
-            const query = document.getElementById('searchInput').value;
+        async function chooseAsset() {
+            const selected = await ipcRenderer.invoke('select-asset-image');
             const res = document.getElementById('results');
-            res.classList.remove('grid-mode');
-            isGridMode = false;
-            res.innerHTML = '<div style="padding:20px; opacity:0.6;">Searching...</div>';
-            const data = await ipcRenderer.invoke('search-sgdb', { query, apiKey: userApiKey });
-            res.innerHTML = '';
-            itemsCount = data.length;
-            focusIndex = 0;
-            data.forEach((game, idx) => {
-                const div = document.createElement('div');
-                div.className = 'search-result';
-                div.innerText = game.name;
-                div.dataset.index = idx;
-                div.onclick = () => loadAssets(game.id);
-                res.appendChild(div);
-            });
-            if(isControllerMode) applyFocus();
-        }
-
-        async function loadAssets(sgdbId) {
-            const res = document.getElementById('results');
-            res.innerHTML = `<div style="padding:20px; opacity:0.6;">Loading ${currentType}s...</div>`;
-            const assets = await ipcRenderer.invoke('get-sgdb-assets', { id: sgdbId, type: currentType, apiKey: userApiKey });
+            if (!selected) {
+                selectedImagePath = null;
+                res.innerHTML = '<div style="padding:20px; opacity:0.6;">No image selected.</div>';
+                return;
+            }
+            selectedImagePath = selected;
+            document.getElementById('searchInput').value = selectedImagePath.split('\\').pop();
             res.classList.add('grid-mode');
-            isGridMode = true;
             res.innerHTML = '';
-            itemsCount = assets.length;
-            focusIndex = 0;
-            assets.forEach((asset, idx) => {
-                const img = document.createElement('div');
-                img.className = `grid-item ${currentType}-mode`;
-                img.style.backgroundImage = `url(${asset.thumb || asset.url})`;
-                img.dataset.index = idx;
-                img.onclick = () => ipcRenderer.send('apply-asset', { gameId: currentGameId, imageUrl: asset.url, type: currentType, oldPath: currentOldPath });
-                res.appendChild(img);
-            });
+            const img = document.createElement('div');
+            img.className = `grid-item ${currentType}-mode`;
+            img.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(selectedImagePath)}&t=${Date.now()}')`;
+            img.onclick = () => ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selectedImagePath, type: currentType, oldPath: currentOldPath });
+            res.appendChild(img);
             currentZone = 'results';
             if(isControllerMode) applyFocus();
-        }
-
-        function getCols() {
-            if (!isGridMode) return 1;
-            const container = document.getElementById('results');
-            const style = window.getComputedStyle(container);
-            return style.gridTemplateColumns.split(' ').length;
         }
 
         function setControllerActive(state) {
@@ -135,13 +103,13 @@
             if (!isControllerMode) return;
             const inputEl = document.getElementById('searchInput');
             inputEl.classList.remove('header-focused');
-            document.querySelectorAll('#results .search-result, #results .grid-item').forEach(el => el.classList.remove('focused'));
+            document.querySelectorAll('#results .grid-item').forEach(el => el.classList.remove('focused'));
             if (currentZone === 'header') {
                 inputEl.classList.add('header-focused');
                 inputEl.focus();
             } else {
                 inputEl.blur();
-                const items = document.querySelectorAll('#results .search-result, #results .grid-item');
+                const items = document.querySelectorAll('#results .grid-item');
                 if (items[focusIndex]) {
                     items[focusIndex].classList.add('focused');
                     items[focusIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -172,23 +140,26 @@
                     const right = activeGp.axes[0] > 0.5 || activeGp.buttons[15].pressed;
 
                     if (currentZone === 'header') {
-                        if (down && itemsCount > 0) { currentZone = 'results'; focusIndex = 0; moved = true; }
+                        if (down) { currentZone = 'results'; focusIndex = 0; moved = true; }
                     } else {
-                        const cols = getCols();
-                        if (down) { if (focusIndex + cols < itemsCount) { focusIndex += cols; moved = true; } }
+                        const items = document.querySelectorAll('#results .grid-item');
+                        const total = items.length;
+                        const cols = total > 0 ? Math.max(1, Math.floor(document.getElementById('results').clientWidth / 140)) : 1;
+
+                        if (down && focusIndex + cols < total) { focusIndex += cols; moved = true; }
                         else if (up) { 
                             if (focusIndex < cols) { currentZone = 'header'; moved = true; } 
                             else { focusIndex -= cols; moved = true; } 
                         }
-                        else if (right) { if (focusIndex + 1 < itemsCount && (focusIndex + 1) % cols !== 0) { focusIndex++; moved = true; } }
-                        else if (left) { if (focusIndex > 0 && focusIndex % cols !== 0) { focusIndex--; moved = true; } }
+                        else if (right && focusIndex + 1 < total) { focusIndex++; moved = true; }
+                        else if (left && focusIndex > 0) { focusIndex--; moved = true; }
                     }
                     if (moved) { applyFocus(); lastMoveTime = now; }
                 }
-                if (activeGp.buttons[0].pressed && !lastButtonState[0]) { 
-                    if (currentZone === 'header') searchGame();
+                if (activeGp.buttons[0].pressed && !lastButtonState[0]) {
+                    if (currentZone === 'header') chooseAsset();
                     else {
-                        const items = document.querySelectorAll('#results .search-result, #results .grid-item');
+                        const items = document.querySelectorAll('#results .grid-item');
                         if (items[focusIndex]) items[focusIndex].click();
                     }
                 }
