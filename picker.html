@@ -8,18 +8,20 @@
         body { background: #1a1a1a; color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; overflow-x: hidden; transition: padding-bottom 0.2s; }
         body.controller-mode { padding-bottom: 5rem; }
         .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-        input { flex: 1; padding: 10px; background: #000; border: 1px solid #444; color: white; border-radius: 6px; transition: border-color 0.2s; }
-        button { padding: 10px 20px; background: var(--accent); border: none; color: white; border-radius: 6px; cursor: pointer; }
-        body.controller-mode input.header-focused { border-color: var(--accent) !important; background: #111; }
-        #results { display: flex; flex-direction: column; gap: 8px; }
+        .status-text { flex: 1; padding: 10px; background: #000; border: 1px solid #444; color: white; border-radius: 6px; display: flex; align-items: center; font-size: 0.95rem; }
+        button { padding: 10px 20px; background: var(--accent); border: none; color: white; border-radius: 6px; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s, border-color 0.2s; }
+        body.controller-mode button.header-focused { border-color: #fff !important; background: #111; transform: scale(1.02); }
+        #gameMatches { display: flex; flex-direction: column; gap: 8px; transition: opacity 0.3s; }
+        #results { display: flex; flex-direction: column; gap: 8px; transition: opacity 0.3s; }
         #results.grid-mode { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; }
-        .search-result { padding: 14px 18px; background: #252525; border-radius: 8px; cursor: pointer; border: 1px solid #333; font-size: 1rem; transition: 0.2s; }
-        .search-result:hover, body.controller-mode .search-result.focused { background: #333; border-color: var(--accent); transform: scale(1.01); }
+        .search-result { padding: 14px 18px; background: #252525; border-radius: 8px; cursor: pointer; border: 1px solid #333; font-size: 1rem; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
+        .search-result:hover, body.controller-mode .search-result.focused { background: #333; border-color: var(--accent); transform: none; }
         
         .grid-item { width: 100%; background: #333 center/cover; border-radius: 8px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
         .grid-item.cover-mode { aspect-ratio: 2/3; }
         .grid-item.icon-mode { aspect-ratio: 1/1; background-size: contain; background-repeat: no-repeat; }
         .grid-item.background-mode { aspect-ratio: 16/9; }
+        .grid-item.logo-mode { aspect-ratio: 16/9; background-size: contain; background-repeat: no-repeat; }
         .grid-item:hover, body.controller-mode .grid-item.focused { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 0 15px rgba(0, 120, 212, 0.4); }
         
         .picker-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #0f0f0f; padding: 1rem 2rem; border-top: 1px solid #333; gap: 2rem; justify-content: flex-start; align-items: center; }
@@ -33,13 +35,16 @@
 <body>
     <h2 id="pickerTitle">Select Asset</h2>
     <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="Choose a local image file..." readonly>
-        <button id="chooseBtn" onclick="chooseAsset()">Browse</button>
+        <input id="searchInput" type="search" placeholder="Search SteamGridDB..." style="flex:1; padding:10px; border:2px solid #333; border-radius:6px; background:#111; color:white;">
+        <button id="searchBtn" style="margin-left:8px;">Search</button>
+        <button id="chooseBtn" onclick="chooseLocalAsset()" style="margin-left:8px;">Browse Local Files</button>
     </div>
-    <div id="results" style="padding: 20px; color: #888;">Select a local image file to apply as the asset.</div>
+    <div id="statusText" class="status-text">Initializing...</div>
+    <div id="gameMatches" style="padding: 20px; color: #888;"></div>
+    <div id="results" style="padding: 20px; color: #888;"></div>
 
     <div class="picker-footer">
-        <div class="glyph-item"><div id="selectGlyph" class="glyph a"></div> Browse</div>
+        <div class="glyph-item"><div id="selectGlyph" class="glyph a"></div> Select</div>
         <div class="glyph-item"><div id="cancelGlyph" class="glyph b"></div> Cancel</div>
     </div>
 
@@ -48,8 +53,8 @@
         let currentGameId = null;
         let currentType = 'cover';
         let currentOldPath = null;
-        let selectedImagePath = null;
-
+        let selectedSteamGridGame = null;
+        
         let isControllerMode = false;
         let currentZone = 'header';
         let focusIndex = 0;
@@ -57,36 +62,119 @@
         let lastButtonState = new Array(20).fill(false);
         let lastActiveGamepadIndex = null;
 
-        document.getElementById('chooseBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter') chooseAsset(); });
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const chooseBtn = document.getElementById('chooseBtn');
+        const status = document.getElementById('statusText');
+        const gameMatches = document.getElementById('gameMatches');
+        const results = document.getElementById('results');
+
+        document.getElementById('chooseBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter') chooseLocalAsset(); });
+        searchBtn.addEventListener('click', () => searchSteamGridGames(searchInput.value.trim()));
+        searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchSteamGridGames(searchInput.value.trim()); });
 
         ipcRenderer.on('init-picker', (e, data) => {
             currentGameId = data.gameId;
             currentType = data.type || 'cover';
             currentOldPath = data.oldPath || null;
-            document.getElementById('searchInput').value = data.name;
-            const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background' };
+            const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background', logo: 'Select Logo' };
             document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
+            searchInput.value = data.name || '';
+            searchSteamGridGames(data.name);
         });
 
-        async function chooseAsset() {
-            const selected = await ipcRenderer.invoke('select-asset-image');
-            const res = document.getElementById('results');
-            if (!selected) {
-                selectedImagePath = null;
-                res.innerHTML = '<div style="padding:20px; opacity:0.6;">No image selected.</div>';
+        async function searchSteamGridGames(gameName) {
+            if (!gameName) {
+                status.innerText = 'Enter a game name to search SteamGridDB.';
+                gameMatches.innerHTML = '';
+                results.innerHTML = '';
                 return;
             }
-            selectedImagePath = selected;
-            document.getElementById('searchInput').value = selectedImagePath.split('\\').pop();
-            res.classList.add('grid-mode');
-            res.innerHTML = '';
-            const img = document.createElement('div');
-            img.className = `grid-item ${currentType}-mode`;
-            img.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(selectedImagePath)}&t=${Date.now()}')`;
-            img.onclick = () => ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selectedImagePath, type: currentType, oldPath: currentOldPath });
-            res.appendChild(img);
+
+            status.innerText = `Searching SteamGridDB for "${gameName}"...`;
+            gameMatches.innerHTML = '<div style="padding:20px; color:#888;">Searching for game matches...</div>';
+            results.innerHTML = '';
+            selectedSteamGridGame = null;
+
+            const response = await ipcRenderer.invoke('search-steamgriddb-games', gameName);
+            if (!response.success) {
+                status.innerText = `SteamGridDB: ${response.error}.`;
+                gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No matches found. Please try a different name or use local files.</div>';
+                return;
+            }
+
+            if (!response.data.length) {
+                status.innerText = 'No matches found.';
+                gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No matches found. Please try a different name or use local files.</div>';
+                return;
+            }
+
+            status.innerText = 'Select the correct game from the SteamGridDB matches below.';
+            gameMatches.classList.remove('grid-mode');
+            gameMatches.innerHTML = '';
+            response.data.forEach((game, index) => {
+                const item = document.createElement('div');
+                item.className = 'search-result';
+                item.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                        <span style="font-weight:700;">${game.name}</span>
+                        ${game.platform ? `<span style="opacity:.75; font-size:.9rem;">${game.platform}</span>` : ''}
+                    </div>
+                    <span style="opacity:.7; font-size:.85rem;">Select</span>
+                `;
+                item.onclick = () => selectSteamGridGame(game);
+                gameMatches.appendChild(item);
+            });
+            currentZone = 'matches';
+            focusIndex = 0;
+            if (isControllerMode) applyFocus();
+        }
+
+        async function selectSteamGridGame(game) {
+            selectedSteamGridGame = game;
+            status.innerText = `Fetching assets for ${game.name}...`;
+            gameMatches.innerHTML = `<div style="padding:20px; color:#ccc;">Selected: <strong>${game.name}</strong></div>`;
+            await loadSteamGridAssets(searchInput.value.trim(), currentType, selectedSteamGridGame.id);
+        }
+
+        async function loadSteamGridAssets(gameName, type, sgGameId) {
+            status.innerText = `Searching SteamGridDB assets for "${gameName}"...`;
+            results.innerHTML = '<div style="padding:20px; color:#888;">Fetching online assets...</div>';
+
+            const response = await ipcRenderer.invoke('fetch-steamgriddb-assets', gameName, type, sgGameId);
+            if (!response.success) {
+                status.innerText = `SteamGridDB: ${response.error}.`;
+                results.innerHTML = '<div style="padding:20px; color:#888;">No online assets found or API key missing. Please browse local files.</div>';
+                return;
+            }
+
+            status.innerText = selectedSteamGridGame ? `Select an asset for ${selectedSteamGridGame.name}` : `Select an asset from SteamGridDB`;
+            results.classList.add('grid-mode');
+            results.innerHTML = '';
+            response.data.forEach((asset) => {
+                const img = document.createElement('div');
+                img.className = `grid-item ${type}-mode`;
+                img.style.backgroundImage = `url('${asset.thumb}')`;
+                img.onclick = () => {
+                    status.innerText = 'Downloading and applying asset...';
+                    results.style.opacity = 0.5;
+                    results.style.pointerEvents = 'none';
+                    ipcRenderer.send('apply-asset', { gameId: currentGameId, imageUrl: asset.url, type: currentType, oldPath: currentOldPath });
+                };
+                results.appendChild(img);
+            });
             currentZone = 'results';
-            if(isControllerMode) applyFocus();
+            focusIndex = 0;
+            if (isControllerMode) applyFocus();
+        }
+
+        async function chooseLocalAsset() {
+            const selected = await ipcRenderer.invoke('select-asset-image');
+            if (!selected) return;
+            status.innerText = 'Applying local asset...';
+            results.style.opacity = 0.5;
+            results.style.pointerEvents = 'none';
+            ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selected, type: currentType, oldPath: currentOldPath });
         }
 
         function setControllerActive(state) {
@@ -97,18 +185,18 @@
         }
 
         window.addEventListener('mousemove', () => setControllerActive(false));
-        window.addEventListener('keydown', (e) => { if (document.activeElement !== document.getElementById('searchInput')) setControllerActive(false); });
+        window.addEventListener('keydown', (e) => { if (document.activeElement !== document.getElementById('chooseBtn')) setControllerActive(false); });
 
         function applyFocus() {
             if (!isControllerMode) return;
-            const inputEl = document.getElementById('searchInput');
-            inputEl.classList.remove('header-focused');
+            const btnEl = document.getElementById('chooseBtn');
+            btnEl.classList.remove('header-focused');
             document.querySelectorAll('#results .grid-item').forEach(el => el.classList.remove('focused'));
             if (currentZone === 'header') {
-                inputEl.classList.add('header-focused');
-                inputEl.focus();
+                btnEl.classList.add('header-focused');
+                btnEl.focus();
             } else {
-                inputEl.blur();
+                btnEl.blur();
                 const items = document.querySelectorAll('#results .grid-item');
                 if (items[focusIndex]) {
                     items[focusIndex].classList.add('focused');
@@ -157,7 +245,7 @@
                     if (moved) { applyFocus(); lastMoveTime = now; }
                 }
                 if (activeGp.buttons[0].pressed && !lastButtonState[0]) {
-                    if (currentZone === 'header') chooseAsset();
+                    if (currentZone === 'header') chooseLocalAsset();
                     else {
                         const items = document.querySelectorAll('#results .grid-item');
                         if (items[focusIndex]) items[focusIndex].click();

@@ -203,6 +203,58 @@ ipcMain.on('open-icon-picker', (event, data) => openPickerWindow(data, 'icon'));
 ipcMain.on('open-bg-picker', (event, data) => openPickerWindow(data, 'background'));
 ipcMain.on('open-logo-picker', (event, data) => openPickerWindow(data, 'logo'));
 
+ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
+    const settings = loadSettings();
+    if (!settings.steamGridApiKey) return { success: false, error: 'No API Key configured in Settings' };
+
+    const headers = { Authorization: `Bearer ${settings.steamGridApiKey}` };
+    try {
+        const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
+        if (!searchRes.data.success || !searchRes.data.data.length) return { success: false, error: 'Game not found on SteamGridDB' };
+
+        const parsed = searchRes.data.data.map(item => ({
+            id: item.id,
+            name: item.name || item.gameName || item.title || '',
+            platform: Array.isArray(item.platforms) ? item.platforms.join(', ') : item.platform || '',
+            thumb: item.thumb || item.logo || '',
+            slug: item.slug || '',
+            releaseDate: item.released || item.release_date || item.releaseDate || ''
+        }));
+
+        return { success: true, data: parsed };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+// API integration for pulling options directly to the artwork picker
+ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameId) => {
+    const settings = loadSettings();
+    if (!settings.steamGridApiKey) return { success: false, error: 'No API Key configured in Settings' };
+
+    const headers = { Authorization: `Bearer ${settings.steamGridApiKey}` };
+    try {
+        let selectedGameId = sgGameId;
+        if (!selectedGameId) {
+            const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
+            if (!searchRes.data.success || !searchRes.data.data.length) return { success: false, error: 'Game not found on SteamGridDB' };
+            selectedGameId = searchRes.data.data[0].id;
+        }
+
+        const typeToEndpoint = { cover: 'grids', background: 'heroes', logo: 'logos', icon: 'icons' };
+        const endpoint = typeToEndpoint[type] || 'grids';
+
+        const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}/game/${selectedGameId}`, { headers });
+        if (res.data.success && res.data.data.length > 0) {
+            return { success: true, data: res.data.data.slice(0, 30).map(item => ({ thumb: item.thumb, url: item.url })) };
+        } else {
+            return { success: false, error: 'No assets found for this category' };
+        }
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
 ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, oldPath }) => {
     try {
         const folderMap = { cover: 'HB-Launcher-Covers', icon: 'HB-Launcher-Icons', background: 'HB-Launcher-Backgrounds', logo: 'HB-Launcher-Logos' };
