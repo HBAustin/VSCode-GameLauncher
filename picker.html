@@ -30,6 +30,7 @@
         .glyph { width: 26px; height: 26px; background: white; color: black; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
         .glyph.a { background: #107c10; color: white; }
         .glyph.b { background: #e81123; color: white; }
+        .glyph.ps-cross, .glyph.ps-circle { background: white; color: #111; }
     </style>
 </head>
 <body>
@@ -53,6 +54,7 @@
         let currentGameId = null;
         let currentType = 'cover';
         let currentOldPath = null;
+        let currentProtectedPaths = [];
         let selectedSteamGridGame = null;
         
         let isControllerMode = false;
@@ -77,6 +79,7 @@
             currentGameId = data.gameId;
             currentType = data.type || 'cover';
             currentOldPath = data.oldPath || null;
+            currentProtectedPaths = data.protectedPaths || [];
             const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background', logo: 'Select Logo' };
             document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
             searchInput.value = data.name || '';
@@ -159,7 +162,7 @@
                     status.innerText = 'Downloading and applying asset...';
                     results.style.opacity = 0.5;
                     results.style.pointerEvents = 'none';
-                    ipcRenderer.send('apply-asset', { gameId: currentGameId, imageUrl: asset.url, type: currentType, oldPath: currentOldPath });
+                    ipcRenderer.send('apply-asset', { gameId: currentGameId, imageUrl: asset.url, type: currentType, oldPath: currentOldPath, protectedPaths: currentProtectedPaths });
                 };
                 results.appendChild(img);
             });
@@ -174,7 +177,7 @@
             status.innerText = 'Applying local asset...';
             results.style.opacity = 0.5;
             results.style.pointerEvents = 'none';
-            ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selected, type: currentType, oldPath: currentOldPath });
+            ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selected, type: currentType, oldPath: currentOldPath, protectedPaths: currentProtectedPaths });
         }
 
         function setControllerActive(state) {
@@ -184,6 +187,18 @@
             if (state) applyFocus();
         }
 
+        function updateGlyphs(gamepadId) {
+            const id = (gamepadId || '').toLowerCase();
+            const isPlayStation = id.includes('dualshock') || id.includes('dualsense') || id.includes('playstation') || id.includes('wireless controller');
+            const selectGlyph = document.getElementById('selectGlyph');
+            const cancelGlyph = document.getElementById('cancelGlyph');
+            if (!selectGlyph || !cancelGlyph) return;
+            selectGlyph.className = `glyph ${isPlayStation ? 'ps-cross' : 'a'}`;
+            cancelGlyph.className = `glyph ${isPlayStation ? 'ps-circle' : 'b'}`;
+            selectGlyph.textContent = isPlayStation ? '×' : 'A';
+            cancelGlyph.textContent = isPlayStation ? '○' : 'B';
+        }
+
         window.addEventListener('mousemove', () => setControllerActive(false));
         window.addEventListener('keydown', (e) => { if (document.activeElement !== document.getElementById('chooseBtn')) setControllerActive(false); });
 
@@ -191,10 +206,16 @@
             if (!isControllerMode) return;
             const btnEl = document.getElementById('chooseBtn');
             btnEl.classList.remove('header-focused');
+            document.querySelectorAll('#gameMatches .search-result').forEach(el => el.classList.remove('focused'));
             document.querySelectorAll('#results .grid-item').forEach(el => el.classList.remove('focused'));
             if (currentZone === 'header') {
                 btnEl.classList.add('header-focused');
                 btnEl.focus();
+            } else if (currentZone === 'matches') {
+                btnEl.blur();
+                const items = document.querySelectorAll('#gameMatches .search-result');
+                items[focusIndex]?.classList.add('focused');
+                items[focusIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
                 btnEl.blur();
                 const items = document.querySelectorAll('#results .grid-item');
@@ -213,6 +234,10 @@
                 if (gp && gp.connected && (gp.buttons.some(b => b.pressed) || gp.axes.some(a => Math.abs(a) > 0.5))) {
                     activeGp = gp;
                     setControllerActive(true);
+                    if (lastActiveGamepadIndex !== gp.index) {
+                        lastActiveGamepadIndex = gp.index;
+                        updateGlyphs(gp.id);
+                    }
                     break;
                 }
             }
@@ -222,17 +247,38 @@
                 const now = Date.now();
                 if (now - lastMoveTime > 180) {
                     let moved = false;
-                    const up = activeGp.axes[1] < -0.5 || activeGp.buttons[12].pressed;
-                    const down = activeGp.axes[1] > 0.5 || activeGp.buttons[13].pressed;
-                    const left = activeGp.axes[0] < -0.5 || activeGp.buttons[14].pressed;
-                    const right = activeGp.axes[0] > 0.5 || activeGp.buttons[15].pressed;
+                    const horizontal = activeGp.axes[0] || 0;
+                    const vertical = activeGp.axes[1] || 0;
+                    const dpadLeft = activeGp.buttons[14]?.pressed;
+                    const dpadRight = activeGp.buttons[15]?.pressed;
+                    const dpadUp = activeGp.buttons[12]?.pressed;
+                    const dpadDown = activeGp.buttons[13]?.pressed;
+                    const useVertical = Math.abs(vertical) >= Math.abs(horizontal);
+                    const up = dpadUp || (useVertical && vertical < -0.5);
+                    const down = dpadDown || (useVertical && vertical > 0.5);
+                    const left = dpadLeft || (!useVertical && horizontal < -0.5);
+                    const right = dpadRight || (!useVertical && horizontal > 0.5);
 
                     if (currentZone === 'header') {
-                        if (down) { currentZone = 'results'; focusIndex = 0; moved = true; }
+                        if (down) {
+                            const matchCount = document.querySelectorAll('#gameMatches .search-result').length;
+                            currentZone = matchCount > 0 ? 'matches' : 'results';
+                            focusIndex = 0;
+                            moved = true;
+                        }
+                    } else if (currentZone === 'matches') {
+                        const items = document.querySelectorAll('#gameMatches .search-result');
+                        if (down && focusIndex + 1 < items.length) { focusIndex++; moved = true; }
+                        else if (up) {
+                            if (focusIndex === 0) { currentZone = 'header'; moved = true; }
+                            else { focusIndex--; moved = true; }
+                        }
                     } else {
                         const items = document.querySelectorAll('#results .grid-item');
                         const total = items.length;
-                        const cols = total > 0 ? Math.max(1, Math.floor(document.getElementById('results').clientWidth / 140)) : 1;
+                        const resultsGrid = document.getElementById('results');
+                        const columns = getComputedStyle(resultsGrid).gridTemplateColumns.split(' ').filter(Boolean).length;
+                        const cols = Math.max(1, columns || 1);
 
                         if (down && focusIndex + cols < total) { focusIndex += cols; moved = true; }
                         else if (up) { 
@@ -244,14 +290,17 @@
                     }
                     if (moved) { applyFocus(); lastMoveTime = now; }
                 }
-                if (activeGp.buttons[0].pressed && !lastButtonState[0]) {
+                const pressedA = activeGp.buttons[0]?.pressed && !lastButtonState[0];
+                const pressedB = activeGp.buttons[1]?.pressed && !lastButtonState[1];
+                if (pressedA) {
                     if (currentZone === 'header') chooseLocalAsset();
+                    else if (currentZone === 'matches') document.querySelectorAll('#gameMatches .search-result')[focusIndex]?.click();
                     else {
                         const items = document.querySelectorAll('#results .grid-item');
                         if (items[focusIndex]) items[focusIndex].click();
                     }
                 }
-                if (activeGp.buttons[1].pressed && !lastButtonState[1]) window.close();
+                if (pressedB) window.close();
                 for (let i = 0; i < activeGp.buttons.length; i++) lastButtonState[i] = activeGp.buttons[i].pressed;
             }
             requestAnimationFrame(handleGamepadLoop);

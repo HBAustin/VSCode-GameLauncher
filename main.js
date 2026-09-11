@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const axios = require('axios');
 const { pathToFileURL } = require('url');
 const THEMES = require('./themes/default-themes.js');
@@ -153,13 +154,51 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { app.quit(); });
 
 ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
-    if (!executablePath || !fs.existsSync(executablePath)) return;
+    if (!executablePath) return;
     try {
-        await shell.openPath(executablePath);
+        const isUri = /^[a-z][a-z\d+.-]*:\/\//i.test(executablePath);
+        const extension = path.extname(executablePath).toLowerCase();
+        const usesWindowsLauncher = process.platform === 'win32' && (isUri || extension === '.lnk' || extension === '.url');
+        const child = usesWindowsLauncher
+            ? spawn('cmd.exe', ['/c', 'start', '', executablePath], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+            })
+            : fs.existsSync(executablePath)
+                ? spawn(executablePath, [], {
+                    cwd: path.dirname(executablePath),
+                    detached: true,
+                    stdio: 'ignore',
+                    windowsHide: true
+                })
+                : null;
+
+        if (!child) return;
+        child.once('error', (err) => {
+            console.error('Failed to execute game instance:', err);
+        });
+        child.unref();
         event.reply('game-started', { id });
     } catch (err) {
         console.error("Failed to execute game instance:", err);
     }
+});
+
+ipcMain.handle('get-user-data-path', () => {
+    const userLibraryPath = path.join(app.getPath('userData'), 'library.json');
+    if (!fs.existsSync(userLibraryPath)) {
+        const bundledLibraryPath = path.join(app.getAppPath(), 'library.json');
+        if (fs.existsSync(bundledLibraryPath)) {
+            try {
+                fs.mkdirSync(app.getPath('userData'), { recursive: true });
+                fs.copyFileSync(bundledLibraryPath, userLibraryPath);
+            } catch (err) {
+                console.error('Failed to migrate library data:', err);
+            }
+        }
+    }
+    return userLibraryPath;
 });
 
 ipcMain.on('toggle-fullscreen', (event) => {
@@ -255,42 +294,61 @@ ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameI
     }
 });
 
-ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, oldPath }) => {
+ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, oldPath, protectedPaths = [] }) => {
+    let temporaryPath = null;
     try {
         const folderMap = { cover: 'HB-Launcher-Covers', icon: 'HB-Launcher-Icons', background: 'HB-Launcher-Backgrounds', logo: 'HB-Launcher-Logos' };
         const folderName = folderMap[type] || 'HB-Launcher-Assets';
         const folder = path.join(app.getPath('documents'), folderName);
         if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
         
-        if (oldPath && fs.existsSync(oldPath)) {
-            try { fs.unlinkSync(oldPath); } catch (e) { console.error("Could not drop old asset image:", e); }
-        }
-
         let localPath = '';
         const ext = (type === 'icon' || type === 'logo') ? '.png' : '.jpg';
         localPath = path.join(folder, `${gameId}${ext}`);
+        temporaryPath = `${localPath}.tmp-${Date.now()}`;
 
         if (imagePath && fs.existsSync(imagePath)) {
-            fs.copyFileSync(imagePath, localPath);
+            fs.copyFileSync(imagePath, temporaryPath);
         } else if (imageUrl) {
             const res = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-            fs.writeFileSync(localPath, Buffer.from(res.data));
+            fs.writeFileSync(temporaryPath, Buffer.from(res.data));
         } else {
             throw new Error('No asset source provided');
         }
+
+        const protectedPathSet = new Set(protectedPaths.map(assetPath => path.resolve(assetPath).toLowerCase()));
+        if (oldPath && fs.existsSync(oldPath) && path.resolve(oldPath) !== path.resolve(localPath) && !protectedPathSet.has(path.resolve(oldPath).toLowerCase())) {
+            try { fs.unlinkSync(oldPath); } catch (e) { console.error("Could not drop old asset image:", e); }
+        }
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+        fs.renameSync(temporaryPath, localPath);
         
         const channelMap = { cover: 'cover-updated', icon: 'icon-updated', background: 'bg-updated', logo: 'logo-updated' };
         const replyChannel = channelMap[type] || 'cover-updated';
         
         if (win) win.webContents.send(replyChannel, { id: gameId, path: localPath });
         if (pickerWin && !pickerWin.isDestroyed()) pickerWin.close();
-    } catch (err) { console.error("Asset modification error:", err); }
+    } catch (err) {
+        if (temporaryPath && fs.existsSync(temporaryPath)) {
+            try { fs.unlinkSync(temporaryPath); } catch (cleanupError) { console.error('Failed to clean temporary asset:', cleanupError); }
+        }
+        console.error("Asset modification error:", err);
+    }
 });
 
-ipcMain.on('delete-game-assets', (event, assetPaths) => {
+ipcMain.on('delete-game-assets', (event, payload) => {
+    const assetPaths = Array.isArray(payload) ? payload : payload?.assetPaths || [];
+    const protectedPaths = new Set((Array.isArray(payload) ? [] : payload?.protectedPaths || []).map(assetPath => path.resolve(assetPath).toLowerCase()));
+    const deletedPaths = new Set();
     assetPaths.forEach(assetPath => {
-        if (assetPath && fs.existsSync(assetPath)) {
-            try { fs.unlinkSync(assetPath); } catch(e) { console.error("Error wiping asset index from drive:", e); }
+        if (!assetPath) return;
+        const normalizedPath = path.resolve(assetPath).toLowerCase();
+        if (protectedPaths.has(normalizedPath) || deletedPaths.has(normalizedPath)) return;
+        if (fs.existsSync(assetPath)) {
+            try {
+                fs.unlinkSync(assetPath);
+                deletedPaths.add(normalizedPath);
+            } catch(e) { console.error("Error wiping asset index from drive:", e); }
         }
     });
 });

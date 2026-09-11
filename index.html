@@ -36,6 +36,7 @@
         .content-wrapper.grid-mode .game-card { aspect-ratio: 2/3; min-height: 280px; flex-direction: column; justify-content: flex-end; }
 
         body.full-screen-mode .content-wrapper.grid-mode #library { grid-template-columns: repeat(6, minmax(220px, 1fr)); gap: 20px; }
+        body.full-screen-mode .content-wrapper.grid-mode .game-card { aspect-ratio: 600 / 900; min-height: 320px; }
 
         @media (max-width: 1600px) {
             .content-wrapper.grid-mode #library { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
@@ -74,14 +75,14 @@
         #detail-panel { flex: 1 1 auto; min-width: 0; width: 100%; background: var(--card-bg); border-radius: 12px; border: 1px solid #222; display: flex; flex-direction: column; overflow: hidden; position: relative; }
         #dp-content-state { justify-content: flex-start; height: auto; }
         
-        .dp-hero { flex: none; height: 340px; min-height: 340px; background: var(--card-bg) center/cover no-repeat; background-size: cover; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: background-image 0.3s ease, background-color 0.3s ease; }
-        .dp-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(17,17,17,0.96) 0%, rgba(17,17,17,0.45) 40%, transparent 100%); }
+        .dp-hero { flex: none; height: 340px; min-height: 340px; background: var(--card-bg) center/cover no-repeat; background-size: cover; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 2rem; transition: height 0.2s ease, background-image 0.3s ease, background-color 0.3s ease; }
+        .dp-hero::after { content: none; }
         .dp-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: flex-start; gap: 1rem; flex-wrap: wrap; }
         .dp-title-block { display: flex; flex-direction: column; gap: 0.5rem; max-width: min(70%, 560px); }
         .dp-title { font-size: clamp(1.8rem, 3vw, 2.8rem); margin: 0; text-shadow: 0 4px 12px rgba(0,0,0,0.85); color: var(--header-text); }
         .dp-subtitle { color: rgba(255,255,255,0.85); font-size: 0.95rem; }
         .dp-action-row { display: flex; justify-content: flex-start; padding: 1.2rem 2rem 0 2rem; }
-        .dp-play-btn { background: #c22e2e; color: white; border: none; padding: 14px 30px; font-size: 1rem; font-weight: 700; border-radius: 10px; cursor: pointer; box-shadow: 0 0 0 rgba(0, 120, 212, 0); transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; border: 2px solid transparent; white-space: nowrap; }
+        .dp-play-btn { background: #c22e2e; color: white; border: none; padding: 14px 30px; font-size: 1rem; font-weight: 700; border-radius: 8px; cursor: pointer; box-shadow: 0 0 0 rgba(0, 120, 212, 0); transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; border: 2px solid transparent; white-space: nowrap; }
         .dp-play-btn:hover, .dp-play-btn:focus, body.controller-mode .dp-play-btn.focused { transform: translateY(-1px) scale(1.02); color: #000; background: #ff8a8a; border-color: rgba(255,255,255,0.6); box-shadow: 0 14px 40px rgba(160, 0, 0, 0.28); }
         .dp-info { padding: 1.5rem 2rem 2rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
         .dp-info, .dp-action-row { background: var(--card-bg); }
@@ -101,28 +102,28 @@
         body.full-screen-mode .dp-info { padding: 2rem; }
         body.full-screen-mode .dashboard-actions { padding: 1.5rem 1.5rem; }
         body.full-screen-mode .action-buttons-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        body.full-screen-mode .dash-btn { padding: 14px 16px; font-size: 14px; border-radius: 12px; }
+        body.full-screen-mode .dash-btn { padding: 14px 16px; font-size: 14px; border-radius: 8px; }
         body.full-screen-mode .dp-empty { min-height: 420px; }
         body.full-screen-mode .content-wrapper { margin-bottom: 0; }
         .dp-empty { display: flex; align-items: center; justify-content: center; min-height: 260px; color: #555; font-size: 1.2rem; font-weight: bold; padding: 2rem; }
 
-        .dashboard-actions { padding: 1rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; display: flex; flex-direction: column; gap: 0.85rem; }
+        .dashboard-actions { padding: 1rem 1.25rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; display: flex; flex-direction: column; gap: 0.85rem; }
         .dashboard-actions h3 { font-size: 0.85rem; text-transform: uppercase; color: #aaa; margin: 0; letter-spacing: 0.08em; }
         .dashboard-actions p { margin: 0; color: #888; font-size: 0.9rem; line-height: 1.45; }
         .action-buttons-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-        .dash-btn { flex: 1; background: #111; color: white; border: 1px solid #333; padding: 14px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 0.75rem; }
+        .dash-btn { flex: 1; background: #111; color: white; border: 1px solid #333; padding: 14px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 0.75rem; }
         .dash-btn:hover, body.controller-mode .dash-btn.focused { background: rgba(0,120,212,0.18); border-color: rgba(0,120,212,0.4); color: white; transform: translateY(-1px); }
 
         .content-wrapper.list-mode #detail-panel { justify-content: flex-start; flex: 1 1 auto; }
         .content-wrapper.list-mode #dp-content-state { justify-content: flex-start !important; }
-        .content-wrapper.list-mode .dp-hero { min-height: 320px; justify-content: flex-end; background-size: cover !important; background-position: center !important; flex-shrink: 0; }
+        .content-wrapper.list-mode .dp-hero { min-height: 320px; justify-content: flex-end; background-position: center !important; flex-shrink: 0; }
         .content-wrapper.list-mode .dp-screenshots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .content-wrapper.list-mode .dp-content { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 15px; width: 100%; }
         .content-wrapper.list-mode .dp-info { flex: 1; overflow-y: auto; }
 
         .game-dashboard-pane { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
         .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
-        .dash-card { background: #141414; border: 1px solid #252525; padding: 0.75rem 1rem; border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+        .dash-card { background: #141414; border: 1px solid #252525; padding: 0.75rem 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 4px; }
         .dash-card.text-span-full { grid-column: span 2; }
         .dash-label { font-size: 10px; font-weight: 700; color: #888; letter-spacing: 0.05em; }
         .dash-value { font-size: 14px; color: #fff; font-weight: 500; }
@@ -130,7 +131,7 @@
         
         .dashboard-actions h3 { font-size: 12px; text-transform: uppercase; color: #666; margin: 1rem 0 0.5rem 0; letter-spacing: 0.03em; border-top: 1px solid #252525; padding-top: 1rem; }
         .action-buttons-row { display: flex; gap: 0.5rem; }
-        .dash-btn { flex: 1; background: #1e1e1e; color: white; border: 1px solid #333; padding: 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s ease; }
+        .dash-btn { flex: 1; background: #1e1e1e; color: white; border: 1px solid #333; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s ease; }
         .dash-btn:hover, body.controller-mode .dash-btn.focused { background: var(--accent); border-color: var(--accent); transform: scale(1.02); }
 
         /* MODALS */
@@ -139,6 +140,29 @@
         .menu-options { display: flex; flex-direction: column; gap: 12px; margin-top: 25px; }
         .menu-btn { background: #1e1e1e; border: 2px solid transparent; color: white; padding: 14px; border-radius: 12px; cursor: pointer; text-align: left; font-weight: 600; transition: 0.2s; }
         .menu-btn.focused, .menu-btn:hover { border-color: var(--accent); background: #252525; transform: scale(1.01); }
+        .artwork-modal-content { width: 96vw; max-width: 1400px; max-height: 92vh; overflow-y: auto; text-align: left; }
+        .artwork-modal-content h2 { margin-top: 0; }
+        .artwork-row { display: grid; grid-template-columns: 205px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px; margin-top: 8px; background: #20232b; border: 1px solid #2d313b; border-radius: 4px; }
+        body.controller-mode .artwork-row.controller-focused { border-color: var(--accent); background: #2b303b; box-shadow: 0 0 0 2px rgba(0,120,212,0.25); }
+        .artwork-preview { width: 205px; height: 118px; background: #15171c center/contain no-repeat; border-radius: 2px; }
+        .artwork-row[data-artwork-type="cover"] .artwork-preview { height: 205px; background-size: cover; }
+        .artwork-row h3 { margin: 0 0 8px; font-size: 1rem; font-weight: 500; }
+        .artwork-row p { margin: 0; color: #9da5b5; line-height: 1.35; font-size: 0.9rem; }
+        .logo-live-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; margin-top: 12px; overflow: hidden; background: #15171c center/cover no-repeat; border: 1px solid #333; border-radius: 6px; cursor: default; }
+        .logo-live-preview::after { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0.12); pointer-events: none; }
+        .logo-live-preview img { position: absolute; z-index: 1; width: auto; max-width: 70%; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)); cursor: grab; user-select: none; }
+        .logo-live-preview img:active { cursor: grabbing; }
+        .logo-artwork-row { grid-template-columns: 1fr; }
+        .logo-artwork-row > .artwork-preview { display: none; }
+        .logo-artwork-row > .artwork-actions { justify-content: flex-end; }
+        .logo-preview-hint { margin: 8px 0 0; font-size: 0.75rem; color: #888; }
+        .artwork-actions { display: flex; gap: 6px; align-self: start; }
+        .artwork-actions .menu-btn { padding: 10px 14px; white-space: nowrap; }
+        @media (max-width: 680px) {
+            .artwork-row { grid-template-columns: 130px minmax(0, 1fr); }
+            .artwork-preview, .artwork-row[data-artwork-type="cover"] .artwork-preview { width: 130px; height: 130px; }
+            .artwork-actions { grid-column: 1 / -1; }
+        }
         #renameInput { width: 100%; padding: 14px; background: #000; color: white; border: 2px solid #333; border-radius: 8px; font-size: 1.2rem; text-align: center; margin-bottom: 20px; transition: border-color 0.2s; }
         #renameInput.focused { border-color: var(--accent); }
         /* CONTROLLER FOOTER */
@@ -226,14 +250,52 @@
     </div>
 
     <div id="customizeModal" class="modal">
-        <div class="modal-content">
-            <h2 style="color:var(--accent); margin-top:0;">Customize Assets</h2>
-            <div class="menu-options" id="customizeOptionsList">
-                <div class="menu-btn" data-action="cover">Change Cover</div>
-                <div class="menu-btn" data-action="icon">Change Icon</div>
-                <div class="menu-btn" data-action="logo">Change Logo</div>
-                <div class="menu-btn" data-action="background">Change Background</div>
-                <div class="menu-btn" data-action="cancel" style="border-top: 1px solid #333; margin-top: 5px; text-align: center;">Cancel</div>
+        <div class="modal-content artwork-modal-content">
+            <h2 style="color:var(--accent);">Customization</h2>
+            <div id="customizeOptionsList">
+                <div class="artwork-row" data-artwork-type="cover">
+                    <div class="artwork-preview" data-preview="cover"></div>
+                    <div><h3>Cover</h3><p>Cover images are displayed in collection views and shelves.</p></div>
+                    <div class="artwork-actions"><div class="menu-btn" data-action="cover">Change</div><div class="menu-btn" data-action="reset-cover">Reset</div></div>
+                </div>
+                <div class="artwork-row" data-artwork-type="background">
+                    <div class="artwork-preview" data-preview="background"></div>
+                    <div><h3>Background</h3><p>Background images are displayed at the top of game detail pages.</p></div>
+                    <div class="artwork-actions"><div class="menu-btn" data-action="background">Change</div><div class="menu-btn" data-action="reset-background">Reset</div></div>
+                </div>
+                <div class="artwork-row logo-artwork-row" data-artwork-type="logo">
+                    <div class="artwork-preview" data-preview="logo"></div>
+                    <div>
+                        <h3>Logo</h3>
+                        <p>Logo images are displayed on top of the background image on game details pages.</p>
+                        <div id="logoLivePreview" class="logo-live-preview"></div>
+                        <p class="logo-preview-hint">Choose a preset, or select Custom and drag the logo. Snap uses a 10% grid.</p>
+                        <label for="gameLogoScale" style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.75rem; color: #888;">
+                            <span>Scale</span><span id="gameLogoScaleValue">100%</span>
+                        </label>
+                        <input type="range" id="gameLogoScale" min="25" max="250" step="5" value="100" style="width: 100%;">
+                        <label for="gameLogoPosition" style="display: block; margin-top: 10px; font-size: 0.75rem; color: #888;">Position</label>
+                        <select id="gameLogoPosition" style="width: 100%; margin-top: 4px; padding: 8px; background: #1e1e1e; color: white; border: 2px solid #333; border-radius: 6px;">
+                            <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-right">Bottom Right</option>
+                            <option value="top-left">Top Left</option>
+                            <option value="top-right">Top Right</option>
+                            <option value="center">Center</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.8rem; color: #ddd;">
+                            <input type="checkbox" id="gameLogoSnapToGrid">
+                            <span>Snap to grid</span>
+                        </label>
+                    </div>
+                    <div class="artwork-actions"><div class="menu-btn" data-action="logo">Change</div><div class="menu-btn" data-action="reset-logo">Reset</div></div>
+                </div>
+                <div class="artwork-row" data-artwork-type="icon">
+                    <div class="artwork-preview" data-preview="icon"></div>
+                    <div><h3>Icon</h3><p>Icons are displayed beside games in list views.</p></div>
+                    <div class="artwork-actions"><div class="menu-btn" data-action="icon">Change</div><div class="menu-btn" data-action="reset-icon">Reset</div></div>
+                </div>
+                <div class="menu-btn" data-action="cancel" style="margin-top: 14px; text-align: center;">Close</div>
             </div>
         </div>
     </div>

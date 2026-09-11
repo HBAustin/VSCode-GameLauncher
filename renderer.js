@@ -9,7 +9,7 @@ const sortSelect = document.getElementById('sortSelect');
 const librarySearch = document.getElementById('librarySearch'); 
 const addBtn = document.getElementById('addBtn');
 
-const SAVE_PATH = './library.json';
+let SAVE_PATH = null;
 
 let gameData = {};
 let sortedIds = [];
@@ -19,46 +19,70 @@ const iconCache = {};
 let viewMode = 'list';
 let selectedListId = null;
 let isFullScreenPreviewActive = false;
+let currentHeroImage = null;
+let heroImageRequestId = 0;
 
 let isControllerMode = false;
 let currentZone = 'library'; 
 let focusIndex = 0;
 let headerFocusIndex = 0;
 let modalFocusIndex = 0;
+let customizeActionMode = false;
+let customizeActionIndex = 0;
 let renameFocusIndex = 0;
 let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
 
-if (fs.existsSync(SAVE_PATH)) {
-    try { 
-        const parsed = JSON.parse(fs.readFileSync(SAVE_PATH));
+async function loadLibrary() {
+    try {
+        SAVE_PATH = await ipcRenderer.invoke('get-user-data-path');
+        if (!SAVE_PATH || !fs.existsSync(SAVE_PATH)) return;
+
+        const parsed = JSON.parse(fs.readFileSync(SAVE_PATH, 'utf-8'));
         if (parsed.gameData) {
             gameData = parsed.gameData;
         } else {
             gameData = parsed;
             if (gameData.gameData) delete gameData.gameData;
         }
-        Object.values(gameData).forEach(d => { 
+        Object.values(gameData).forEach(d => {
             if (d && typeof d === 'object') {
-                d.favorite ??= false; 
-                d.background ??= ''; 
-                d.icon ??= ''; 
+                d.favorite ??= false;
+                d.background ??= '';
+                d.icon ??= '';
                 d.logo ??= '';
                 d.lastPlayed ??= 0;
                 d.currentVersion ??= '1.0.0';
                 d.latestVersion ??= '1.0.0';
                 d.platform ??= 'custom';
                 d.platformId ??= null;
+                d.heroLogoScale ??= 100;
+                d.heroLogoPosition ??= 'bottom-left';
+                d.heroLogoX ??= 50;
+                d.heroLogoY ??= 50;
+                d.heroLogoSnapToGrid ??= false;
             }
         });
-    } catch (e) { console.error("Error loading data file:", e); }
+    } catch (e) {
+        console.error('Error loading data file:', e);
+    } finally {
+        renderLibrary();
+    }
 }
 
 const saveToDisk = () => { 
-    fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2)); 
+    if (!SAVE_PATH) return;
+    fs.writeFileSync(SAVE_PATH, JSON.stringify(gameData, null, 2), 'utf-8');
 };
+
+function getArtworkPathsInUse(excludeId = null) {
+    return Object.entries(gameData)
+        .filter(([id]) => id !== excludeId)
+        .flatMap(([, game]) => [game.cover, game.icon, game.background, game.logo])
+        .filter(Boolean);
+}
 
 let currentSettings = { theme: 'dark', steamGridApiKey: '', customColors: {}, customFonts: {}, customLayout: {} };
 
@@ -108,6 +132,7 @@ const applySettings = (settings) => {
     const layout = settings.customLayout || {};
     if (layout.cardSize) document.body.dataset.cardSize = layout.cardSize;
     if (layout.fontSize) document.body.style.fontSize = layout.fontSize;
+    applyHeroLogoSettings();
 
     try {
         const bg = (colors.background || getComputedStyle(root).getPropertyValue('--bg') || '#000').trim();
@@ -278,7 +303,6 @@ const saveSettings = async () => {
         if (cardSizeEl) currentSettings.customLayout.cardSize = cardSizeEl.value;
         const useLogoEl = document.getElementById('useLogoOnHero');
         if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
-
         currentSettings.theme = 'custom';
         currentSettings = ensureSettingsDefaults(currentSettings);
 
@@ -423,6 +447,213 @@ const launchItem = (id) => {
     }
 };
 
+function applyHeroLogoSettings(game = selectedListId ? gameData[selectedListId] : null) {
+    const logoContainer = document.getElementById('dpLogoContainer');
+    if (!logoContainer) return;
+
+    applyLogoPosition(logoContainer, game?.heroLogoPosition || 'bottom-left', game);
+
+    const logoImage = logoContainer.querySelector('img');
+    if (logoImage) {
+        logoImage.onload = () => applyLogoImageScale(logoImage, game, logoContainer.parentElement);
+        applyLogoImageScale(logoImage, game, logoContainer.parentElement);
+    }
+}
+
+function getLogoScale(game) {
+    return Math.max(25, Math.min(250, Number(game?.heroLogoScale) || 100));
+}
+
+function applyLogoImageScale(image, game, container) {
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    const windowScale = Math.max(0.45, Math.min(1.25, (container?.clientWidth || 1200) / 1200));
+    const height = 64 * (getLogoScale(game) / 100) * windowScale;
+    image.style.maxWidth = 'none';
+    image.style.maxHeight = 'none';
+    image.style.height = `${height}px`;
+    image.style.width = `${height * image.naturalWidth / image.naturalHeight}px`;
+}
+
+function applyLogoPosition(element, position, game = {}) {
+    const positions = {
+        'bottom-left': { x: 5, y: 82, transform: 'translate(0, -50%)' },
+        'bottom-right': { x: 95, y: 82, transform: 'translate(-100%, -50%)' },
+        'top-left': { x: 5, y: 18, transform: 'translate(0, -50%)' },
+        'top-right': { x: 95, y: 18, transform: 'translate(-100%, -50%)' },
+        center: { x: 50, y: 50, transform: 'translate(-50%, -50%)' }
+    };
+    const selectedPosition = position === 'custom'
+        ? { x: Number(game.heroLogoX) || 50, y: Number(game.heroLogoY) || 50, transform: 'translate(-50%, -50%)' }
+        : positions[position] || positions['bottom-left'];
+
+    element.style.left = `${selectedPosition.x}%`;
+    element.style.top = `${selectedPosition.y}%`;
+    element.style.right = 'auto';
+    element.style.bottom = 'auto';
+    element.style.transform = selectedPosition.transform;
+}
+
+function updateLogoLivePreview(game, forceReload = false) {
+    const preview = document.getElementById('logoLivePreview');
+    if (!preview) return;
+
+    const backgroundPath = game?.background || game?.cover;
+    const logoPath = game?.logo || game?.icon;
+    if (forceReload) {
+        preview.dataset.backgroundPath = '';
+        const existingLogo = preview.querySelector('img');
+        if (existingLogo) existingLogo.dataset.logoPath = '';
+    }
+    if (preview.dataset.backgroundPath !== (backgroundPath || '')) {
+        preview.dataset.backgroundPath = backgroundPath || '';
+        preview.style.backgroundImage = backgroundPath
+            ? `url('local-image://asset?path=${encodeURIComponent(backgroundPath)}${forceReload ? `&t=${Date.now()}` : ''}')`
+            : 'none';
+        preview.style.aspectRatio = '16 / 9';
+
+        if (backgroundPath) {
+            const backgroundImage = new Image();
+            backgroundImage.onload = () => {
+                if (preview.dataset.backgroundPath === backgroundPath) {
+                    preview.style.aspectRatio = `${backgroundImage.naturalWidth} / ${backgroundImage.naturalHeight}`;
+                }
+            };
+            backgroundImage.src = `local-image://asset?path=${encodeURIComponent(backgroundPath)}${forceReload ? `&t=${Date.now()}` : ''}`;
+        }
+    }
+
+    let logoImage = preview.querySelector('img');
+    if (!logoPath) {
+        if (logoImage) logoImage.remove();
+        return;
+    }
+
+    if (!logoImage) {
+        logoImage = document.createElement('img');
+        preview.appendChild(logoImage);
+    }
+    if (logoImage.dataset.logoPath !== logoPath) {
+        logoImage.dataset.logoPath = logoPath;
+        logoImage.src = `local-image://asset?path=${encodeURIComponent(logoPath)}${forceReload ? `&t=${Date.now()}` : ''}`;
+    }
+    applyLogoPosition(logoImage, game.heroLogoPosition || 'bottom-left', game);
+    logoImage.onload = () => applyLogoImageScale(logoImage, game, preview);
+    applyLogoImageScale(logoImage, game, preview);
+}
+
+function updateGameLogoControls(game) {
+    const scaleControl = document.getElementById('gameLogoScale');
+    const scaleValue = document.getElementById('gameLogoScaleValue');
+    const positionControl = document.getElementById('gameLogoPosition');
+    const snapControl = document.getElementById('gameLogoSnapToGrid');
+    const logoScale = getLogoScale(game);
+    if (scaleControl) scaleControl.value = logoScale;
+    if (scaleValue) scaleValue.textContent = `${logoScale}%`;
+    if (positionControl) positionControl.value = game?.heroLogoPosition || 'bottom-left';
+    if (snapControl) snapControl.checked = !!game?.heroLogoSnapToGrid;
+}
+
+const gameLogoScaleControl = document.getElementById('gameLogoScale');
+if (gameLogoScaleControl) {
+    gameLogoScaleControl.addEventListener('input', () => {
+        if (!currentEditingId || !gameData[currentEditingId]) return;
+        const value = Number(gameLogoScaleControl.value);
+        gameData[currentEditingId].heroLogoScale = value;
+        const valueLabel = document.getElementById('gameLogoScaleValue');
+        if (valueLabel) valueLabel.textContent = `${value}%`;
+        saveToDisk();
+        updateLogoLivePreview(gameData[currentEditingId]);
+        if (selectedListId === currentEditingId) {
+            applyHeroLogoSettings(gameData[currentEditingId]);
+        }
+    });
+}
+
+const gameLogoPositionControl = document.getElementById('gameLogoPosition');
+if (gameLogoPositionControl) {
+    gameLogoPositionControl.addEventListener('change', () => {
+        if (!currentEditingId || !gameData[currentEditingId]) return;
+        gameData[currentEditingId].heroLogoPosition = gameLogoPositionControl.value;
+        if (gameLogoPositionControl.value === 'custom') {
+            gameData[currentEditingId].heroLogoX ??= 50;
+            gameData[currentEditingId].heroLogoY ??= 50;
+        }
+        saveToDisk();
+        updateLogoLivePreview(gameData[currentEditingId]);
+        if (selectedListId === currentEditingId) {
+            applyHeroLogoSettings(gameData[currentEditingId]);
+        }
+    });
+}
+
+const gameLogoSnapControl = document.getElementById('gameLogoSnapToGrid');
+if (gameLogoSnapControl) {
+    gameLogoSnapControl.addEventListener('change', () => {
+        if (!currentEditingId || !gameData[currentEditingId]) return;
+        gameData[currentEditingId].heroLogoSnapToGrid = gameLogoSnapControl.checked;
+        saveToDisk();
+    });
+}
+
+let isDraggingLogo = false;
+const logoLivePreview = document.getElementById('logoLivePreview');
+if (logoLivePreview) {
+    logoLivePreview.addEventListener('pointerdown', (event) => {
+        const logoImage = event.target.closest('img');
+        const game = currentEditingId ? gameData[currentEditingId] : null;
+        if (!logoImage || !game || game.heroLogoPosition !== 'custom') return;
+        isDraggingLogo = true;
+        logoLivePreview.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    });
+
+    logoLivePreview.addEventListener('pointermove', (event) => {
+        if (!isDraggingLogo || !currentEditingId || !gameData[currentEditingId]) return;
+        const game = gameData[currentEditingId];
+        const rect = logoLivePreview.getBoundingClientRect();
+        let x = ((event.clientX - rect.left) / rect.width) * 100;
+        let y = ((event.clientY - rect.top) / rect.height) * 100;
+        if (game.heroLogoSnapToGrid) {
+            x = Math.round(x / 10) * 10;
+            y = Math.round(y / 10) * 10;
+        }
+        game.heroLogoX = Math.max(5, Math.min(95, x));
+        game.heroLogoY = Math.max(5, Math.min(95, y));
+        const logoImage = logoLivePreview.querySelector('img');
+        if (logoImage) applyLogoPosition(logoImage, 'custom', game);
+        if (selectedListId === currentEditingId) applyHeroLogoSettings(game);
+    });
+
+    const finishLogoDrag = (event) => {
+        if (!isDraggingLogo) return;
+        isDraggingLogo = false;
+        if (logoLivePreview.hasPointerCapture(event.pointerId)) logoLivePreview.releasePointerCapture(event.pointerId);
+        saveToDisk();
+    };
+    logoLivePreview.addEventListener('pointerup', finishLogoDrag);
+    logoLivePreview.addEventListener('pointercancel', finishLogoDrag);
+}
+
+function updateHeroHeight() {
+    const hero = document.getElementById('dpHero');
+    if (!hero || !currentHeroImage?.naturalWidth || !currentHeroImage.naturalHeight) return;
+
+    const heroWidth = hero.clientWidth;
+    if (!heroWidth) return;
+
+    const heroHeight = heroWidth * currentHeroImage.naturalHeight / currentHeroImage.naturalWidth;
+    hero.style.height = `${heroHeight}px`;
+    hero.style.minHeight = `${heroHeight}px`;
+}
+
+window.addEventListener('resize', updateHeroHeight);
+window.addEventListener('resize', () => {
+    applyHeroLogoSettings();
+    if (currentEditingId && document.getElementById('logoLivePreview')) {
+        updateLogoLivePreview(gameData[currentEditingId]);
+    }
+});
+
 const selectListItem = (id) => {
     selectedListId = id;
     localStorage.setItem('hb-last-selected', id);
@@ -439,6 +670,21 @@ const selectListItem = (id) => {
     
     const heroBg = d.background || d.cover;
     document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}')` : 'none';
+    const requestId = ++heroImageRequestId;
+    currentHeroImage = null;
+    if (heroBg) {
+        const heroImage = new Image();
+        heroImage.onload = () => {
+            if (requestId !== heroImageRequestId) return;
+            currentHeroImage = heroImage;
+            updateHeroHeight();
+        };
+        heroImage.src = `local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}`;
+    } else {
+        const hero = document.getElementById('dpHero');
+        hero.style.height = '';
+        hero.style.minHeight = '';
+    }
     document.getElementById('dpPlayBtn').onclick = () => launchItem(id);
 
     if (isFullScreenMode) {
@@ -463,7 +709,8 @@ const selectListItem = (id) => {
         const logoPath = d.logo || d.icon;
         if (currentSettings?.customLayout?.useLogoOnHero && logoPath) {
             const imgSrc = `local-image://asset?path=${encodeURIComponent(logoPath)}&t=${Date.now()}`;
-            if (dpLogoContainer) dpLogoContainer.innerHTML = `<img src="${imgSrc}" style="height:64px; width:auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" alt="logo"/>`;
+            if (dpLogoContainer) dpLogoContainer.innerHTML = `<img src="${imgSrc}" style="width:auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" alt="logo"/>`;
+            applyHeroLogoSettings(d);
             if (dpTitleEl) dpTitleEl.style.display = 'none';
         } else {
             if (dpLogoContainer) dpLogoContainer.innerHTML = '';
@@ -542,6 +789,8 @@ function openModal(modalName) {
     currentZone = modalName + 'Modal';
     modalFocusIndex = 0;
     renameFocusIndex = 0;
+    customizeActionMode = false;
+    customizeActionIndex = 0;
     document.getElementById(`${currentZone}`).style.display = 'flex';
     
     if (modalName === 'context') {
@@ -561,11 +810,25 @@ function closeModal() {
     document.getElementById('customizeModal').style.display = 'none';
     document.getElementById('renameModal').style.display = 'none';
     document.getElementById('settingsModal').style.display = 'none';
+    customizeActionMode = false;
     
     if (['contextModal', 'customizeModal', 'renameModal', 'settingsModal'].includes(currentZone)) {
         currentZone = sortedIds.length > 0 ? 'library' : 'header';
         if (isControllerMode) applyFocus();
     }
+}
+
+function updateCustomizePreviews(game, forceReload = false) {
+    updateGameLogoControls(game);
+    updateLogoLivePreview(game, forceReload);
+    ['cover', 'background', 'logo', 'icon'].forEach(type => {
+        const preview = document.querySelector(`[data-preview="${type}"]`);
+        if (!preview) return;
+        const assetPath = game[type];
+        preview.style.backgroundImage = assetPath
+            ? `url('local-image://asset?path=${encodeURIComponent(assetPath)}&t=${Date.now()}')`
+            : 'none';
+    });
 }
 
 async function executeAction(action) {
@@ -583,6 +846,7 @@ async function executeAction(action) {
         }, 
         'open-customize': () => { 
             closeModal(); 
+            updateCustomizePreviews(gObj);
             openModal('customize'); 
         },
         'open-file-location': () => { if (gObj.path) ipcRenderer.send('open-file-location', gObj.path); closeModal(); },
@@ -595,12 +859,19 @@ async function executeAction(action) {
             } 
             closeModal();
         }, 
-        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '' }); closeModal(); }, 
-        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '' }); closeModal(); }, 
-        'logo': () => { ipcRenderer.send('open-logo-picker', { gameId: currentEditingId, name: gameName, type: 'logo', oldPath: gObj.logo || '' }); closeModal(); }, 
-        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '' }); closeModal(); }, 
+        'cover': () => { ipcRenderer.send('open-picker', { gameId: currentEditingId, name: gameName, type: 'cover', oldPath: gObj.cover || '', protectedPaths: getArtworkPathsInUse(currentEditingId) }); },
+        'icon': () => { ipcRenderer.send('open-icon-picker', { gameId: currentEditingId, name: gameName, type: 'icon', oldPath: gObj.icon || '', protectedPaths: getArtworkPathsInUse(currentEditingId) }); },
+        'logo': () => { ipcRenderer.send('open-logo-picker', { gameId: currentEditingId, name: gameName, type: 'logo', oldPath: gObj.logo || '', protectedPaths: getArtworkPathsInUse(currentEditingId) }); },
+        'background': () => { ipcRenderer.send('open-bg-picker', { gameId: currentEditingId, name: gameName, type: 'background', oldPath: gObj.background || '', protectedPaths: getArtworkPathsInUse(currentEditingId) }); },
+        'reset-cover': () => resetArtwork('cover', gObj),
+        'reset-background': () => resetArtwork('background', gObj),
+        'reset-logo': () => resetArtwork('logo', gObj),
+        'reset-icon': () => resetArtwork('icon', gObj),
         'remove': () => { 
-            ipcRenderer.send('delete-game-assets', [gObj.cover, gObj.icon, gObj.background, gObj.logo]);
+            ipcRenderer.send('delete-game-assets', {
+                assetPaths: [gObj.cover, gObj.icon, gObj.background, gObj.logo],
+                protectedPaths: getArtworkPathsInUse(currentEditingId)
+            });
             delete gameData[currentEditingId]; 
             saveToDisk(); 
             renderLibrary(); 
@@ -610,6 +881,20 @@ async function executeAction(action) {
     };
     
     if (actions[action]) actions[action]();
+}
+
+function resetArtwork(type, game) {
+    const oldPath = game[type];
+    if (!oldPath) return;
+    ipcRenderer.send('delete-game-assets', {
+        assetPaths: [oldPath],
+        protectedPaths: getArtworkPathsInUse(currentEditingId)
+    });
+    game[type] = '';
+    saveToDisk();
+    renderLibrary();
+    if (selectedListId === currentEditingId) selectListItem(currentEditingId);
+    updateCustomizePreviews(game);
 }
 
 const handleRenameSave = () => {
@@ -642,7 +927,12 @@ function addGameToLibrary({ id, name, path, cover, icon, logo, background }) {
         currentVersion: '1.0.0',
         latestVersion: '1.0.0',
         platform: 'custom',
-        platformId: null
+        platformId: null,
+        heroLogoScale: 100,
+        heroLogoPosition: 'bottom-left',
+        heroLogoX: 50,
+        heroLogoY: 50,
+        heroLogoSnapToGrid: false
     };
 
     saveToDisk();
@@ -716,6 +1006,7 @@ function applyFocus() {
     if (!isControllerMode) return;
 
     document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.artwork-row').forEach(el => el.classList.remove('controller-focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (currentZone === 'contextModal') {
@@ -723,8 +1014,17 @@ function applyFocus() {
         if (ctxBtns[modalFocusIndex]) ctxBtns[modalFocusIndex].classList.add('focused');
     }
     else if (currentZone === 'customizeModal') {
-        const customBtns = document.querySelectorAll('#customizeOptionsList .menu-btn');
-        if (customBtns[modalFocusIndex]) customBtns[modalFocusIndex].classList.add('focused');
+        const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
+        const activeRow = artworkRows[modalFocusIndex];
+        if (!activeRow) return;
+        if (customizeActionMode) {
+            const activeButton = activeRow.querySelectorAll('.artwork-actions .menu-btn')[customizeActionIndex];
+            activeButton?.classList.add('focused');
+            activeButton?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            activeRow.classList.add('controller-focused');
+            activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
     else if (currentZone === 'renameModal') {
         const renameInputEl = document.getElementById('renameInput');
@@ -801,9 +1101,14 @@ function handleGamepadLoop() {
                 if (up && modalFocusIndex > 0) { modalFocusIndex--; moved = true; }
             }
             else if (currentZone === 'customizeModal') {
-                const btns = document.querySelectorAll('#customizeOptionsList .menu-btn');
-                if (down && modalFocusIndex + 1 < btns.length) { modalFocusIndex++; moved = true; }
-                if (up && modalFocusIndex > 0) { modalFocusIndex--; moved = true; }
+                const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
+                if (customizeActionMode) {
+                    if (right && customizeActionIndex < 1) { customizeActionIndex++; moved = true; }
+                    if (left && customizeActionIndex > 0) { customizeActionIndex--; moved = true; }
+                } else {
+                    if (down && modalFocusIndex + 1 < artworkRows.length) { modalFocusIndex++; moved = true; }
+                    if (up && modalFocusIndex > 0) { modalFocusIndex--; moved = true; }
+                }
             }
             else if (currentZone === 'renameModal') {
                 if (down && renameFocusIndex === 0) { renameFocusIndex = 1; moved = true; }
@@ -868,7 +1173,17 @@ function handleGamepadLoop() {
 
         if (pressedA) {
             if (currentZone === 'contextModal') { document.querySelectorAll('#contextOptionsList .menu-btn')[modalFocusIndex]?.click(); }
-            else if (currentZone === 'customizeModal') { document.querySelectorAll('#customizeOptionsList .menu-btn')[modalFocusIndex]?.click(); }
+            else if (currentZone === 'customizeModal') {
+                const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
+                const activeRow = artworkRows[modalFocusIndex];
+                if (activeRow && !customizeActionMode) {
+                    customizeActionMode = true;
+                    customizeActionIndex = 0;
+                    applyFocus();
+                } else if (activeRow) {
+                    activeRow.querySelectorAll('.artwork-actions .menu-btn')[customizeActionIndex]?.click();
+                }
+            }
             else if (currentZone === 'renameModal') {
                 if (renameFocusIndex === 1) handleRenameSave();
                 else if (renameFocusIndex === 2) closeModal();
@@ -892,7 +1207,10 @@ function handleGamepadLoop() {
         }
 
         if (pressedB) {
-            if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {
+            if (currentZone === 'customizeModal' && customizeActionMode) {
+                customizeActionMode = false;
+                applyFocus();
+            } else if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {
                 closeModal();
             } else if (currentZone === 'library') {
                 currentZone = 'header'; 
@@ -918,10 +1236,11 @@ function handleGamepadLoop() {
     requestAnimationFrame(handleGamepadLoop);
 }
 
-ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
-ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); if(selectedListId === id) selectListItem(id); } });
-ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); } });
-ipcRenderer.on('logo-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].logo = path; saveToDisk(); renderLibrary(); if(selectedListId === id) selectListItem(id); } });
+ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
+ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
+ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); } });
+ipcRenderer.on('logo-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].logo = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
 
+loadLibrary();
 applyLayoutMode();
 requestAnimationFrame(handleGamepadLoop);
