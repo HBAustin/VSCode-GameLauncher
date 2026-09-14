@@ -7,7 +7,7 @@
         :root { --accent: #0078d4; --bg: #0a0a0a; --card-bg: #1a1a1a; --text: #ffffff; --header-text: #ffffff; --card-bg-hover: rgba(255,255,255,0.06); --sidebar-width: 300px; --card-gap: 10px; }
         * { box-sizing: border-box; outline: none; }
         body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow: hidden; height: 100vh; transition: padding-bottom 0.3s; display: flex; flex-direction: column; }
-        body.controller-mode { padding-bottom: 8rem; }
+        body.controller-mode { padding-bottom: 0; }
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border, #222); color: var(--header-text); flex-shrink: 0; position: relative; }
         .header h1 { margin: 0; z-index: 3; pointer-events: none; }
@@ -193,7 +193,7 @@
             </select>
             <button class="control-btn" id="fullScreenBtn" data-header-idx="2">⛶ Full Screen</button>
             <button class="control-btn" id="addBtn" data-header-idx="3">+ Add</button>
-            <button class="control-btn" id="settingsBtn" data-header-idx="4">🎨 Settings</button>
+            <button class="control-btn" id="settingsBtn" data-header-idx="4">Settings</button>
         </div>
     </div>
 
@@ -359,23 +359,17 @@
 
             <div style="margin-bottom: 2rem;">
                 <h3 style="margin-top: 0; font-size: 1rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em;">Layout</h3>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Font Size</label>
-                        <select id="fontSize" style="width: 100%; padding: 8px; background: #1e1e1e; color: white; border: 2px solid #333; border-radius: 6px;">
-                            <option value="small">Small</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="large">Large</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">Card Size</label>
-                        <select id="cardSize" style="width: 100%; padding: 8px; background: #1e1e1e; color: white; border: 2px solid #333; border-radius: 6px;">
-                            <option value="small">Small</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="large">Large</option>
-                        </select>
-                    </div>
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="customScaleEnabled" />
+                    <span style="font-size: 0.9rem; color: #ddd;">Use custom UI scale</span>
+                </label>
+                <div style="margin-top: 1rem;">
+                    <label for="customScale" style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #888; margin-bottom: 0.5rem;">
+                        <span>Scale</span>
+                        <output id="customScaleValue">100%</output>
+                    </label>
+                    <input type="range" id="customScale" min="75" max="200" step="5" value="100" style="width: 100%;" disabled>
+                    <div style="font-size: 0.75rem; color: #666; margin-top: 0.5rem;">Off uses the Windows display scale.</div>
                 </div>
             </div>
 

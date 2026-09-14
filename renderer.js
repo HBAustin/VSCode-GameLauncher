@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -99,7 +99,8 @@ function ensureSettingsDefaults(settings) {
     settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#6366f1';
     settings.customFonts.family ??= document.body.style.fontFamily || '';
     settings.customFonts.sizeBase ??= document.body.style.fontSize || '';
-    settings.customLayout.fontSize ??= settings.customLayout.fontSize || 'medium';
+    settings.customLayout.customScaleEnabled ??= false;
+    settings.customLayout.customScale ??= 100;
     settings.customLayout.useLogoOnHero ??= false;
     return settings;
 }
@@ -130,8 +131,10 @@ const applySettings = (settings) => {
     if (fonts.family) document.body.style.fontFamily = fonts.family;
     
     const layout = settings.customLayout || {};
-    if (layout.cardSize) document.body.dataset.cardSize = layout.cardSize;
-    if (layout.fontSize) document.body.style.fontSize = layout.fontSize;
+    const customScale = Math.max(75, Math.min(200, Number(layout.customScale) || 100));
+    try {
+        webFrame.setZoomFactor(layout.customScaleEnabled ? customScale / 100 : 1);
+    } catch (e) { console.error('Error applying interface scale:', e); }
     applyHeroLogoSettings();
 
     try {
@@ -275,8 +278,17 @@ const updateColorInputs = () => {
     document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#6366f1';
     document.getElementById('colorText').value = currentSettings.customColors.text || '#e0e0e0';
     document.getElementById('colorCard').value = currentSettings.customColors.surface || '#2a2a2a';
-    document.getElementById('fontSize').value = currentSettings.customLayout?.fontSize || 'medium';
-    document.getElementById('cardSize').value = currentSettings.customLayout?.cardSize || 'medium';
+    const customScaleEnabledEl = document.getElementById('customScaleEnabled');
+    const customScaleEl = document.getElementById('customScale');
+    const customScaleValueEl = document.getElementById('customScaleValue');
+    const customScaleEnabled = !!currentSettings.customLayout?.customScaleEnabled;
+    const customScale = Math.max(75, Math.min(200, Number(currentSettings.customLayout?.customScale) || 100));
+    if (customScaleEnabledEl) customScaleEnabledEl.checked = customScaleEnabled;
+    if (customScaleEl) {
+        customScaleEl.value = customScale;
+        customScaleEl.disabled = !customScaleEnabled;
+    }
+    if (customScaleValueEl) customScaleValueEl.textContent = `${customScale}%`;
     const useLogoEl = document.getElementById('useLogoOnHero');
     if (useLogoEl) useLogoEl.checked = !!currentSettings.customLayout?.useLogoOnHero;
 };
@@ -291,16 +303,16 @@ const saveSettings = async () => {
         const colorAccentEl = document.getElementById('colorAccent');
         const colorTextEl = document.getElementById('colorText');
         const colorCardEl = document.getElementById('colorCard');
-        const fontSizeEl = document.getElementById('fontSize');
-        const cardSizeEl = document.getElementById('cardSize');
 
         if (apiKeyEl) currentSettings.steamGridApiKey = apiKeyEl.value.trim();
         if (colorBgEl) currentSettings.customColors.background = colorBgEl.value;
         if (colorAccentEl) currentSettings.customColors.accent = colorAccentEl.value;
         if (colorTextEl) currentSettings.customColors.text = colorTextEl.value;
         if (colorCardEl) currentSettings.customColors.surface = colorCardEl.value;
-        if (fontSizeEl) currentSettings.customLayout.fontSize = fontSizeEl.value;
-        if (cardSizeEl) currentSettings.customLayout.cardSize = cardSizeEl.value;
+        const customScaleEnabledEl = document.getElementById('customScaleEnabled');
+        const customScaleEl = document.getElementById('customScale');
+        if (customScaleEnabledEl) currentSettings.customLayout.customScaleEnabled = customScaleEnabledEl.checked;
+        if (customScaleEl) currentSettings.customLayout.customScale = Number(customScaleEl.value);
         const useLogoEl = document.getElementById('useLogoOnHero');
         if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
         currentSettings.theme = 'custom';
@@ -361,6 +373,26 @@ const ensureSettingsButtonsReady = () => {
 };
 
 ensureSettingsButtonsReady();
+
+const customScaleEnabledEl = document.getElementById('customScaleEnabled');
+const customScaleEl = document.getElementById('customScale');
+const customScaleValueEl = document.getElementById('customScaleValue');
+if (customScaleEnabledEl) {
+    customScaleEnabledEl.addEventListener('change', () => {
+        customScaleEl.disabled = !customScaleEnabledEl.checked;
+        currentSettings.customLayout.customScaleEnabled = customScaleEnabledEl.checked;
+        applySettings(currentSettings);
+    });
+}
+if (customScaleEl) {
+    customScaleEl.addEventListener('input', () => {
+        if (customScaleValueEl) customScaleValueEl.textContent = `${customScaleEl.value}%`;
+    });
+    customScaleEl.addEventListener('change', () => {
+        currentSettings.customLayout.customScale = Number(customScaleEl.value);
+        applySettings(currentSettings);
+    });
+}
 
 ipcRenderer.on('settings-updated', (settings) => {
     currentSettings = ensureSettingsDefaults(settings);
