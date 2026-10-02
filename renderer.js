@@ -1,6 +1,5 @@
 const { ipcRenderer, webFrame } = require('electron');
 const fs = require('fs');
-const path = require('path');
 
 const library = document.getElementById('library');
 const contentWrapper = document.getElementById('contentWrapper');
@@ -14,6 +13,7 @@ let SAVE_PATH = null;
 let gameData = {};
 let sortedIds = [];
 let currentEditingId = null;
+let pendingAddGamePath = null;
 const iconCache = {}; 
 
 let viewMode = 'list';
@@ -21,6 +21,7 @@ let selectedListId = null;
 let isFullScreenPreviewActive = false;
 let currentHeroImage = null;
 let heroImageRequestId = 0;
+let steamMediaRequestId = 0;
 
 let isControllerMode = false;
 let currentZone = 'library'; 
@@ -54,10 +55,6 @@ async function loadLibrary() {
                 d.icon ??= '';
                 d.logo ??= '';
                 d.lastPlayed ??= 0;
-                d.currentVersion ??= '1.0.0';
-                d.latestVersion ??= '1.0.0';
-                d.platform ??= 'custom';
-                d.platformId ??= null;
                 d.heroLogoScale ??= 100;
                 d.heroLogoPosition ??= 'bottom-left';
                 d.heroLogoX ??= 50;
@@ -140,47 +137,34 @@ const applySettings = (settings) => {
     try {
         const bg = (colors.background || getComputedStyle(root).getPropertyValue('--bg') || '#000').trim();
         const surface = (colors.surface || getComputedStyle(root).getPropertyValue('--card-bg') || '#111').trim();
+        const backgroundLuminance = luminance(hexToRgb(bg));
+        const detailSurface = adjustHex(bg, backgroundLuminance < 0.5 ? 5 : -5);
+        const detailLuminance = luminance(hexToRgb(detailSurface));
+        root.style.setProperty('--detail-surface', detailSurface);
+        root.style.setProperty('--detail-text', detailLuminance > 0.179 ? '#111' : '#fff');
         const isPreset = settings.theme && settings.theme !== 'custom';
+        const headerColor = isPreset
+            ? getAutoHeaderTextColor(surface || bg)
+            : (colors.text || getComputedStyle(root).getPropertyValue('--text') || '#ffffff').trim();
+        root.style.setProperty('--header-text', headerColor);
 
-        if (isPreset) {
-            const headerColor = getAutoHeaderTextColor(surface || bg);
-            root.style.setProperty('--header-text', headerColor);
-            const headerEl = document.getElementById('appHeader');
-            if (headerEl) {
-                try {
-                    headerEl.style.color = headerColor;
-                    const headerTitle = headerEl.querySelector('h1');
-                    if (headerTitle) headerTitle.style.color = headerColor;
-                    const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
-                    controls.forEach(c => { try { c.style.color = headerColor; } catch (e) {} });
-                } catch (e) {}
-            }
-            try {
-                const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
-                cardTextSelectors.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => { try { el.style.color = headerColor; } catch (e) {} });
-                });
-            } catch (e) {}
-        } else {
-            const manualText = (colors.text || getComputedStyle(root).getPropertyValue('--text') || '#ffffff').trim();
-            root.style.setProperty('--header-text', manualText);
-            try {
-                const headerEl = document.getElementById('appHeader');
-                if (headerEl) {
-                    headerEl.style.color = manualText;
-                    const headerTitle = headerEl.querySelector('h1');
-                    if (headerTitle) headerTitle.style.color = manualText;
-                    const controls = headerEl.querySelectorAll('input, select, button, .control-btn');
-                    controls.forEach(c => { try { c.style.color = manualText; } catch (e) {} });
-                }
-            } catch (e) {}
-            try {
-                const cardTextSelectors = ['.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title', '.game-card .fav-badge', '.game-card .update-badge', '.dp-title', '.dash-value', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn'];
-                cardTextSelectors.forEach(sel => {
-                    document.querySelectorAll(sel).forEach(el => { try { el.style.color = manualText; } catch (e) {} });
-                });
-            } catch (e) {}
+        const headerEl = document.getElementById('appHeader');
+        if (headerEl) {
+            headerEl.style.color = headerColor;
+            const headerTitle = headerEl.querySelector('h1');
+            if (headerTitle) headerTitle.style.color = headerColor;
+            headerEl.querySelectorAll('input, select, button, .control-btn').forEach(element => {
+                element.style.color = headerColor;
+            });
         }
+
+        const cardTextSelectors = [
+            '.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title',
+            '.game-card .fav-badge', '.dp-title', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn:not(.play-themed-btn)'
+        ];
+        document.querySelectorAll(cardTextSelectors.join(', ')).forEach(element => {
+            element.style.color = headerColor;
+        });
 
         let hover;
         try {
@@ -227,6 +211,35 @@ function getAutoHeaderTextColor(bgHex) {
     } catch (e) { return '#ffffff'; }
 }
 
+let activeSettingsTab = 'appearance';
+
+function activateSettingsTab(tabName) {
+    activeSettingsTab = tabName;
+    document.querySelectorAll('.settings-tab').forEach((tab) => {
+        const isActive = tab.dataset.settingsTab === tabName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+    });
+    document.querySelectorAll('.settings-panel').forEach((panel) => {
+        panel.hidden = panel.dataset.settingsPanel !== tabName;
+    });
+}
+
+document.querySelectorAll('.settings-tab').forEach((tab) => {
+    tab.addEventListener('click', () => activateSettingsTab(tab.dataset.settingsTab));
+    tab.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        const tabs = Array.from(document.querySelectorAll('.settings-tab'));
+        const currentIndex = tabs.indexOf(tab);
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        const nextTab = tabs[(currentIndex + direction + tabs.length) % tabs.length];
+        event.preventDefault();
+        nextTab.focus();
+        activateSettingsTab(nextTab.dataset.settingsTab);
+    });
+});
+
 const showSettingsModal = async () => {
     try {
         const themes = await ipcRenderer.invoke('get-all-themes');
@@ -254,7 +267,6 @@ const showSettingsModal = async () => {
                         currentSettings.theme = theme.id;
                         currentSettings.customColors = { ...preset.colors };
                         currentSettings.customFonts = { ...preset.fonts };
-                        currentSettings.customLayout = { ...preset.layout };
                         updateColorInputs();
                         applySettings(currentSettings);
                         showSettingsModal();
@@ -265,6 +277,7 @@ const showSettingsModal = async () => {
         });
 
         updateColorInputs();
+        activateSettingsTab(activeSettingsTab);
         openModal('settings');
     } catch (err) {
         console.error('Error showing settings:', err);
@@ -469,15 +482,99 @@ addBtn.onclick = () => {
 sortSelect.onchange = () => renderLibrary();
 librarySearch.oninput = () => renderLibrary();
 
+function formatLastPlayed(timestamp) {
+    if (!timestamp) return 'Never played';
+    const playedAt = new Date(timestamp);
+    if (Number.isNaN(playedAt.getTime())) return 'Never played';
+
+    const today = new Date();
+    const dayNumber = date => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
+    const daysAgo = dayNumber(today) - dayNumber(playedAt);
+    if (daysAgo <= 0) return 'Today';
+    if (daysAgo === 1) return 'Yesterday';
+    if (daysAgo < 7) return 'A few days ago';
+    return playedAt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 const launchItem = (id) => { 
     if (gameData[id]?.path) { 
         gameData[id].lastPlayed = Date.now();
         saveToDisk(); 
-        if(viewMode === 'list') selectListItem(id);
+        document.getElementById('dashLastPlayed').innerText = formatLastPlayed(gameData[id].lastPlayed);
         ipcRenderer.send('launch-game-process', { id, executablePath: gameData[id].path }); 
-        renderLibrary();
     }
 };
+
+function applyPlayButtonColor(image) {
+    const button = document.getElementById('dpPlayBtn');
+    if (!button) return;
+    const managementButtons = document.querySelectorAll('.dp-management-actions .dash-btn');
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 24;
+        canvas.height = 24;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        const buckets = new Map();
+        for (let index = 0; index < pixels.length; index += 4) {
+            if (pixels[index + 3] < 128) continue;
+            const red = pixels[index];
+            const green = pixels[index + 1];
+            const blue = pixels[index + 2];
+            const key = `${red >> 3},${green >> 3},${blue >> 3}`;
+            const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
+            bucket.count++;
+            bucket.red += red;
+            bucket.green += green;
+            bucket.blue += blue;
+            buckets.set(key, bucket);
+        }
+
+        const dominant = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
+        if (!dominant) throw new Error('No opaque image colors found');
+
+        const red = Math.round(dominant.red / dominant.count);
+        const green = Math.round(dominant.green / dominant.count);
+        const blue = Math.round(dominant.blue / dominant.count);
+        const toLinear = value => {
+            const channel = value / 255;
+            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue);
+
+        button.style.setProperty('--play-color', `rgb(${red}, ${green}, ${blue})`);
+        const contrastColor = luminance > 0.179 ? '#000' : '#fff';
+        button.style.setProperty('--play-text-color', contrastColor);
+        button.style.setProperty('--play-outline-color', contrastColor);
+        managementButtons.forEach((actionButton) => {
+            actionButton.style.setProperty('--play-color', `rgb(${red}, ${green}, ${blue})`);
+            actionButton.style.setProperty('--play-text-color', contrastColor);
+        });
+    } catch (error) {
+        button.style.removeProperty('--play-color');
+        button.style.removeProperty('--play-text-color');
+        button.style.removeProperty('--play-outline-color');
+        managementButtons.forEach((actionButton) => {
+            actionButton.style.removeProperty('--play-color');
+            actionButton.style.removeProperty('--play-text-color');
+        });
+    }
+}
+
+function resetPlayButtonColor() {
+    const button = document.getElementById('dpPlayBtn');
+    if (!button) return;
+    button.style.removeProperty('--play-color');
+    button.style.removeProperty('--play-text-color');
+    button.style.removeProperty('--play-outline-color');
+    document.querySelectorAll('.dp-management-actions .dash-btn').forEach((actionButton) => {
+        actionButton.style.removeProperty('--play-color');
+        actionButton.style.removeProperty('--play-text-color');
+    });
+}
 
 function applyHeroLogoSettings(game = selectedListId ? gameData[selectedListId] : null) {
     const logoContainer = document.getElementById('dpLogoContainer');
@@ -673,7 +770,7 @@ function updateHeroHeight() {
     const heroWidth = hero.clientWidth;
     if (!heroWidth) return;
 
-    const heroHeight = heroWidth * currentHeroImage.naturalHeight / currentHeroImage.naturalWidth;
+    const heroHeight = Math.min(heroWidth * currentHeroImage.naturalHeight / currentHeroImage.naturalWidth, 440);
     hero.style.height = `${heroHeight}px`;
     hero.style.minHeight = `${heroHeight}px`;
 }
@@ -684,6 +781,155 @@ window.addEventListener('resize', () => {
     if (currentEditingId && document.getElementById('logoLivePreview')) {
         updateLogoLivePreview(gameData[currentEditingId]);
     }
+});
+
+function parseSteamRecommendations(html) {
+    if (!html) return [];
+    const recommendationsDocument = new DOMParser().parseFromString(html, 'text/html');
+    return Array.from(recommendationsDocument.querySelectorAll('.similar_grid_ctn .similar_grid_capsule'))
+        .slice(0, 12)
+        .map((card) => {
+            const appId = card.dataset.dsAppid;
+            const image = card.querySelector('img')?.getAttribute('src');
+            const storeUrl = card.getAttribute('href');
+            const slug = storeUrl ? new URL(storeUrl).pathname.split('/')[3] : '';
+            return {
+                appId,
+                name: decodeURIComponent(slug || '').replace(/_/g, ' '),
+                image
+            };
+        })
+        .filter((game) => game.appId && game.name && game.image);
+}
+
+function renderSteamMedia(selectedId, media) {
+    const game = gameData[selectedId];
+    const screenshotGrid = document.getElementById('dpScreenshotGrid');
+    const screenshotStatus = document.getElementById('dpScreenshotStatus');
+    const genres = document.getElementById('dpGameGenres');
+    const recommendationsSection = document.getElementById('dpRelated');
+    const recommendationsGrid = document.getElementById('relatedGamesGrid');
+    const recommendationsStatus = document.getElementById('relatedGamesEmpty');
+    if (!game || !screenshotGrid || !screenshotStatus || !recommendationsSection || !recommendationsGrid || !recommendationsStatus) return;
+
+    screenshotGrid.replaceChildren();
+    genres.textContent = media?.genres?.join(' · ') || '';
+    if (media?.loading) {
+        screenshotStatus.textContent = 'Looking for official Steam screenshots...';
+    } else if (media?.success && media.screenshots.length) {
+        screenshotStatus.textContent = '';
+        media.screenshots.forEach((source, index) => {
+            const frame = document.createElement('div');
+            frame.className = 'dp-screenshot';
+            const image = document.createElement('img');
+            image.src = source;
+            image.alt = `${game.name} screenshot ${index + 1}`;
+            image.loading = 'lazy';
+            frame.appendChild(image);
+            screenshotGrid.appendChild(frame);
+        });
+    } else if (game.background || game.cover) {
+        screenshotStatus.textContent = 'Steam screenshots are unavailable; showing saved artwork.';
+        const frame = document.createElement('div');
+        frame.className = 'dp-screenshot';
+        const image = document.createElement('img');
+        image.src = `local-image://asset?path=${encodeURIComponent(game.background || game.cover)}`;
+        image.alt = `${game.name} saved artwork`;
+        image.loading = 'lazy';
+        frame.appendChild(image);
+        screenshotGrid.appendChild(frame);
+    } else {
+        screenshotStatus.textContent = media?.error || 'No screenshots are available for this title.';
+    }
+
+    recommendationsGrid.replaceChildren();
+    recommendationsSection.hidden = false;
+    recommendationsStatus.hidden = !!media?.loading || !!media?.recommendations?.length;
+    recommendationsStatus.textContent = media?.loading
+        ? 'Loading suggestions...'
+        : media?.success
+            ? 'No Steam suggestions were found for this title.'
+            : 'Suggestions are unavailable without an exact Steam Store match.';
+
+    (media?.recommendations || []).forEach((suggestion) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'related-game-card';
+        card.title = suggestion.name;
+        card.setAttribute('aria-label', `Open ${suggestion.name} in Steam`);
+
+        const artwork = document.createElement('div');
+        artwork.className = 'related-game-art';
+        artwork.style.backgroundImage = `url('${suggestion.image}')`;
+
+        const name = document.createElement('span');
+        name.className = 'related-game-name';
+        name.textContent = suggestion.name;
+        card.append(artwork, name);
+        card.onclick = () => ipcRenderer.send('open-steam-game', suggestion.appId);
+        recommendationsGrid.appendChild(card);
+    });
+}
+
+function loadSteamMedia(selectedId) {
+    const game = gameData[selectedId];
+    const screenshotsSection = document.getElementById('dpScreenshots');
+    const recommendationsSection = document.getElementById('dpRelated');
+    if (!game || !screenshotsSection || !recommendationsSection) return;
+
+    const requestKey = `${selectedId}:${game.name}`;
+    if (screenshotsSection.dataset.requestKey === requestKey) return;
+    screenshotsSection.dataset.requestKey = requestKey;
+
+    if (game.steamMedia?.query === game.name) {
+        renderSteamMedia(selectedId, game.steamMedia);
+        return;
+    }
+
+    const requestId = ++steamMediaRequestId;
+    const loadingMedia = { loading: true };
+    renderSteamMedia(selectedId, loadingMedia);
+    ipcRenderer.invoke('get-steam-game-media', game.name).then((result) => {
+        if (requestId !== steamMediaRequestId || selectedListId !== selectedId) return;
+
+        if (!result.success) {
+            renderSteamMedia(selectedId, { error: result.error });
+            return;
+        }
+
+        game.steamMedia = {
+            query: game.name,
+            success: true,
+            appId: result.appId,
+            genres: result.genres || [],
+            screenshots: result.screenshots || [],
+            recommendations: parseSteamRecommendations(result.recommendationsHtml)
+        };
+        saveToDisk();
+        renderSteamMedia(selectedId, game.steamMedia);
+    }).catch((error) => {
+        if (requestId !== steamMediaRequestId || selectedListId !== selectedId) return;
+        renderSteamMedia(selectedId, { error: error.message });
+    });
+}
+
+document.querySelectorAll('.dp-screenshot-grid, .related-games-grid').forEach((gallery) => {
+    gallery.addEventListener('wheel', (event) => {
+        const maxScrollLeft = gallery.scrollWidth - gallery.clientWidth;
+        if (maxScrollLeft <= 0) return;
+
+        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        if (!delta) return;
+        if ((delta < 0 && gallery.scrollLeft <= 0) || (delta > 0 && gallery.scrollLeft >= maxScrollLeft)) return;
+
+        const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            ? 16
+            : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                ? gallery.clientWidth
+                : 1;
+        event.preventDefault();
+        gallery.scrollLeft += delta * scale;
+    }, { passive: false });
 });
 
 const selectListItem = (id) => {
@@ -699,6 +945,7 @@ const selectListItem = (id) => {
     const dpContent = document.getElementById('dp-content-state');
     dpContent.style.display = 'flex';
     document.getElementById('dpTitle').innerText = d.name;
+    loadSteamMedia(id);
     
     const heroBg = d.background || d.cover;
     document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}')` : 'none';
@@ -709,10 +956,15 @@ const selectListItem = (id) => {
         heroImage.onload = () => {
             if (requestId !== heroImageRequestId) return;
             currentHeroImage = heroImage;
+            applyPlayButtonColor(heroImage);
             updateHeroHeight();
+        };
+        heroImage.onerror = () => {
+            if (requestId === heroImageRequestId) resetPlayButtonColor();
         };
         heroImage.src = `local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}`;
     } else {
+        resetPlayButtonColor();
         const hero = document.getElementById('dpHero');
         hero.style.height = '';
         hero.style.minHeight = '';
@@ -723,11 +975,7 @@ const selectListItem = (id) => {
         enterFullScreenPreview();
     }
 
-    if (d.lastPlayed) {
-        document.getElementById('dashLastPlayed').innerText = new Date(d.lastPlayed).toLocaleString();
-    } else {
-        document.getElementById('dashLastPlayed').innerText = "Never";
-    }
+    document.getElementById('dashLastPlayed').innerText = formatLastPlayed(d.lastPlayed);
 
     document.getElementById('dashBtnOpenFolder').onclick = () => ipcRenderer.send('open-file-location', d.path);
     document.getElementById('dashBtnChangePath').onclick = async () => {
@@ -838,6 +1086,10 @@ function openModal(modalName) {
 }
 
 function closeModal() {
+    if (currentZone === 'renameModal') {
+        pendingAddGamePath = null;
+        setRenameModalMode(false);
+    }
     document.getElementById('contextModal').style.display = 'none';
     document.getElementById('customizeModal').style.display = 'none';
     document.getElementById('renameModal').style.display = 'none';
@@ -872,6 +1124,7 @@ async function executeAction(action) {
         'toggle-fav': () => { gObj.favorite = !gObj.favorite; saveToDisk(); renderLibrary(); closeModal(); }, 
         'rename': () => { 
             closeModal();
+            setRenameModalMode(false);
             document.getElementById('renameInput').value = gObj.name;
             openModal('rename');
             if (!isControllerMode) document.getElementById('renameInput').focus();
@@ -929,10 +1182,25 @@ function resetArtwork(type, game) {
     updateCustomizePreviews(game);
 }
 
+function setRenameModalMode(isAddingGame) {
+    document.getElementById('renameModalTitle').innerText = isAddingGame ? 'Confirm Game Name' : 'Rename Game';
+    document.getElementById('renameModalHint').style.display = isAddingGame ? 'block' : 'none';
+    document.getElementById('confirmRenameBtn').innerText = isAddingGame ? 'Continue' : 'Save';
+}
+
 const handleRenameSave = () => {
     const newName = document.getElementById('renameInput').value.trim();
+    if (pendingAddGamePath) {
+        if (!newName) return;
+        const filePath = pendingAddGamePath;
+        pendingAddGamePath = null;
+        closeModal();
+        ipcRenderer.send('add-game-name-confirmed', { filePath, gameName: newName });
+        return;
+    }
     if (newName && currentEditingId) {
         gameData[currentEditingId].name = newName;
+        delete gameData[currentEditingId].steamMedia;
         saveToDisk();
         renderLibrary();
         if (selectedListId === currentEditingId) selectListItem(currentEditingId);
@@ -956,10 +1224,6 @@ function addGameToLibrary({ id, name, path, cover, icon, logo, background }) {
         logo,
         background,
         lastPlayed: 0,
-        currentVersion: '1.0.0',
-        latestVersion: '1.0.0',
-        platform: 'custom',
-        platformId: null,
         heroLogoScale: 100,
         heroLogoPosition: 'bottom-left',
         heroLogoX: 50,
@@ -974,6 +1238,14 @@ function addGameToLibrary({ id, name, path, cover, icon, logo, background }) {
 
 ipcRenderer.on('add-game-confirmed', (event, newGameObj) => {
     addGameToLibrary(newGameObj);
+});
+
+ipcRenderer.on('confirm-add-game-name', (event, { filePath, suggestedName }) => {
+    pendingAddGamePath = filePath;
+    setRenameModalMode(true);
+    document.getElementById('renameInput').value = suggestedName || '';
+    openModal('rename');
+    if (!isControllerMode) document.getElementById('renameInput').focus();
 });
 
 document.querySelectorAll('.menu-btn[data-action]').forEach(btn => {
@@ -1086,7 +1358,9 @@ function applyFocus() {
             if (activeCard) {
                 activeCard.classList.add('focused');
                 activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                if (viewMode === 'list') selectListItem(sortedIds[focusIndex]);
+                if (viewMode === 'list' && selectedListId !== sortedIds[focusIndex]) {
+                    selectListItem(sortedIds[focusIndex]);
+                }
             }
         }
     }
@@ -1099,6 +1373,9 @@ function applyFocus() {
 
 function handleGamepadLoop() {
     if (!document.hasFocus()) { requestAnimationFrame(handleGamepadLoop); return; }
+    if (isFullScreenPreviewActive && currentZone !== 'detail-panel') {
+        currentZone = 'detail-panel';
+    }
     
     const gamepads = navigator.getGamepads();
     let activeGp = null;
@@ -1189,11 +1466,13 @@ function handleGamepadLoop() {
                 if (left && viewMode === 'grid') { if (focusIndex > 0) { focusIndex--; moved = true; } }
             }
             else if (currentZone === 'detail-panel') {
-                if (left && dashFocusIndex === 0) { currentZone = 'library'; moved = true; }
+                if (left && dashFocusIndex === 2) { dashFocusIndex = 1; moved = true; }
+                else if (left && dashFocusIndex === 1) { dashFocusIndex = 0; moved = true; }
+                else if (left && dashFocusIndex === 0 && !isFullScreenPreviewActive) { currentZone = 'library'; moved = true; }
+                if (right && dashFocusIndex === 0) { dashFocusIndex = 1; moved = true; }
+                else if (right && dashFocusIndex === 1) { dashFocusIndex = 2; moved = true; }
                 if (down && dashFocusIndex === 0) { dashFocusIndex = 1; moved = true; }
                 if (up && (dashFocusIndex === 1 || dashFocusIndex === 2)) { dashFocusIndex = 0; moved = true; }
-                if (right && dashFocusIndex === 1) { dashFocusIndex = 2; moved = true; }
-                if (left && dashFocusIndex === 2) { dashFocusIndex = 1; moved = true; }
             }
 
             if (moved) { applyFocus(); lastMoveTime = now; }
@@ -1230,7 +1509,11 @@ function handleGamepadLoop() {
                     } else { activeEl.click(); }
                 }
             } 
-            else if (currentZone === 'library' && sortedIds[focusIndex]) { launchItem(sortedIds[focusIndex]); }
+            else if (currentZone === 'library' && sortedIds[focusIndex]) {
+                const selectedId = sortedIds[focusIndex];
+                if (viewMode === 'grid' && isFullScreenMode) selectListItem(selectedId);
+                else launchItem(selectedId);
+            }
             else if (currentZone === 'detail-panel') {
                 if (dashFocusIndex === 0) document.getElementById('dpPlayBtn').click();
                 if (dashFocusIndex === 1) document.getElementById('dashBtnOpenFolder').click();

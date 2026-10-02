@@ -179,7 +179,6 @@ ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
             console.error('Failed to execute game instance:', err);
         });
         child.unref();
-        event.reply('game-started', { id });
     } catch (err) {
         console.error("Failed to execute game instance:", err);
     }
@@ -263,6 +262,59 @@ ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
         return { success: true, data: parsed };
     } catch (err) {
         return { success: false, error: err.message };
+    }
+});
+
+function normalizeSteamTitle(title) {
+    return String(title || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
+    const normalizedTitle = normalizeSteamTitle(gameTitle);
+    if (!normalizedTitle) return { success: false, error: 'A game title is required.' };
+
+    try {
+        const searchResponse = await axios.get('https://store.steampowered.com/api/storesearch/', {
+            params: { term: gameTitle, l: 'english', cc: 'US' },
+            timeout: 15000
+        });
+        const exactMatch = searchResponse.data?.items?.find(item => normalizeSteamTitle(item.name) === normalizedTitle);
+        if (!exactMatch) return { success: false, error: 'No exact Steam Store title match was found.' };
+
+        const appId = String(exactMatch.id);
+        const [detailsResponse, recommendationsResponse] = await Promise.all([
+            axios.get('https://store.steampowered.com/api/appdetails', {
+                params: { appids: appId, cc: 'US', l: 'en' },
+                timeout: 15000
+            }),
+            axios.get(`https://store.steampowered.com/recommended/morelike/app/${appId}/`, {
+                params: { cc: 'US', l: 'en' },
+                timeout: 15000
+            }).catch(() => ({ data: '' }))
+        ]);
+
+        const details = detailsResponse.data?.[appId]?.data;
+        if (!detailsResponse.data?.[appId]?.success || !details) {
+            return { success: false, error: 'Steam Store details are unavailable for this title.' };
+        }
+
+        return {
+            success: true,
+            appId,
+            title: details.name || exactMatch.name,
+            genres: (details.genres || []).map(genre => genre.description).filter(Boolean),
+            screenshots: (details.screenshots || []).slice(0, 12).map(screenshot => screenshot.path_full).filter(Boolean),
+            recommendationsHtml: recommendationsResponse.data || ''
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+ipcMain.on('open-steam-game', (event, appId) => {
+    const safeAppId = String(appId || '');
+    if (/^\d+$/.test(safeAppId)) {
+        shell.openExternal(`https://store.steampowered.com/app/${safeAppId}/`);
     }
 });
 
@@ -403,7 +455,15 @@ ipcMain.on('add-game-requested', async (event) => {
     if (canceled || filePaths.length === 0) return;
 
     const filePath = filePaths[0];
-    const fileName = path.basename(filePath, path.extname(filePath));
+    const suggestedName = path.basename(filePath, path.extname(filePath));
+    event.sender.send('confirm-add-game-name', { filePath, suggestedName });
+});
+
+ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
+    const name = typeof gameName === 'string' ? gameName.trim() : '';
+    const supportedExtensions = new Set(['.exe', '.bat', '.cmd', '.lnk', '.url']);
+    if (!name || !filePath || !fs.existsSync(filePath) || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return;
+
     const gameId = 'game-' + Date.now();
     
     let coverPath = '';
@@ -413,7 +473,7 @@ ipcMain.on('add-game-requested', async (event) => {
 
     const settings = loadSettings();
     if (settings.steamGridApiKey) {
-        const fetchedAssets = await fetchSteamGridArtwork(fileName, settings.steamGridApiKey, gameId);
+        const fetchedAssets = await fetchSteamGridArtwork(name, settings.steamGridApiKey, gameId);
         coverPath = fetchedAssets.cover || '';
         bgPath = fetchedAssets.background || '';
         logoPath = fetchedAssets.logo || '';
@@ -438,7 +498,7 @@ ipcMain.on('add-game-requested', async (event) => {
 
     event.sender.send('add-game-confirmed', {
         id: gameId,
-        name: fileName,
+        name,
         path: filePath,
         cover: coverPath,
         background: bgPath,

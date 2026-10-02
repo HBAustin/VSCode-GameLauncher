@@ -83,7 +83,11 @@
             const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background', logo: 'Select Logo' };
             document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
             searchInput.value = data.name || '';
-            searchSteamGridGames(data.name);
+            status.innerText = 'Verify or edit the game name, then search SteamGridDB.';
+            gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No search has been made yet.</div>';
+            results.innerHTML = '';
+            searchInput.focus();
+            searchInput.select();
         });
 
         async function searchSteamGridGames(gameName) {
