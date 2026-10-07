@@ -1,12 +1,14 @@
 {
   "name": "hb-launcher",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "description": "Personal Custom Game Launcher",
   "author": "HB",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
   },
   "build": {
     "appId": "com.hayden.hblauncher",
@@ -14,6 +16,10 @@
     "win": {
       "target": "portable",
       "icon": "icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "icon.icns"
     }
   },
   "dependencies": {
