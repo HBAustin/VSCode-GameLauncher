@@ -83,6 +83,11 @@ function getArtworkPathsInUse(excludeId = null) {
 }
 
 let currentSettings = { theme: 'dark', steamGridApiKey: '', customColors: {}, customFonts: {}, customLayout: {} };
+let settingsBeforeEdit = null;
+
+function cloneSettings(settings) {
+    return JSON.parse(JSON.stringify(settings));
+}
 
 function ensureSettingsDefaults(settings) {
     if (!settings || typeof settings !== 'object') settings = {};
@@ -369,6 +374,9 @@ document.querySelectorAll('.settings-tab').forEach((tab) => {
 });
 
 const showSettingsModal = async () => {
+    settingsBeforeEdit = cloneSettings(currentSettings);
+    document.getElementById('steamGridApiKey').value = currentSettings.steamGridApiKey || '';
+    updateColorInputs();
     try {
         const themes = await ipcRenderer.invoke('get-all-themes');
         const presetsContainer = document.getElementById('themePresets');
@@ -421,7 +429,6 @@ const showSettingsModal = async () => {
 };
 
 const updateColorInputs = () => {
-    document.getElementById('steamGridApiKey').value = currentSettings.steamGridApiKey || '';
     document.getElementById('colorBg').value = currentSettings.customColors.background || '#1a1a1a';
     document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#6366f1';
     document.getElementById('colorText').value = currentSettings.customColors.text || '#e0e0e0';
@@ -478,6 +485,7 @@ const saveSettings = async () => {
         if (result && result.success) {
             currentSettings = ensureSettingsDefaults(safeSettings);
             applySettings(currentSettings);
+            settingsBeforeEdit = null;
             closeModal();
         } else {
             alert('Failed to save settings');
@@ -1222,6 +1230,11 @@ function closeModal() {
     if (currentZone === 'renameModal') {
         pendingAddGamePath = null;
         setRenameModalMode(false);
+    }
+    if (currentZone === 'settingsModal' && settingsBeforeEdit) {
+        currentSettings = ensureSettingsDefaults(settingsBeforeEdit);
+        settingsBeforeEdit = null;
+        applySettings(currentSettings);
     }
     document.getElementById('contextModal').style.display = 'none';
     document.getElementById('customizeModal').style.display = 'none';
