@@ -13,12 +13,40 @@ let win, pickerWin;
 
 function createWindow() {
     app.setAppUserModelId('com.hb.launcher.v1');
+
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+
     win = new BrowserWindow({
         width: 1200, height: 850, minWidth: 800, minHeight: 600,
         frame: true,
-        backgroundColor: '#0a0a0a',
+        
+        // --- Cross-Platform Modern Titlebar & Glass Styling ---
+        titleBarStyle: isMac ? 'hiddenInset' : isWin ? 'hidden' : 'default',
+        titleBarOverlay: isWin ? {
+            color: '#00000000',
+            symbolColor: '#ffffff',
+            height: 38
+        } : false,
+        trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+        
+        // --- Translucency & Vibrancy ---
+        vibrancy: isMac ? 'under-window' : undefined,
+        visualEffectState: isMac ? 'active' : undefined,
+        backgroundColor: '#00000000', // Fully transparent background required for glass effects
+        
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
     });
+
+    // Apply Windows 11 Acrylic Background Material
+    if (isWin && typeof win.setBackgroundMaterial === 'function') {
+        try {
+            win.setBackgroundMaterial('acrylic');
+        } catch (err) {
+            console.error('Failed to apply Windows Acrylic material:', err);
+        }
+    }
+
     win.loadFile('index.html');
     win.on('closed', () => { win = null; });
     win.on('enter-full-screen', () => {
@@ -110,7 +138,7 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
                 const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}/game/${sgGameId}`, { headers });
                 if (res.data.success && res.data.data.length > 0) {
                     const imgUrl = res.data.data[0].url;
-                    const folder = path.join(docsPath, folderName);
+                    const folder = path.join(docsPath, 'HB-Launcher', folderName);
                     if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
 
                     const localPath = path.join(folder, `${gameId}${ext}`);
@@ -124,10 +152,10 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
             return '';
         };
 
-        results.cover = await downloadAsset('grids', 'HB-Launcher-Covers', '.jpg');
-        results.background = await downloadAsset('heroes', 'HB-Launcher-Backgrounds', '.jpg');
-        results.logo = await downloadAsset('logos', 'HB-Launcher-Logos', '.png');
-        results.icon = await downloadAsset('icons', 'HB-Launcher-Icons', '.png');
+        results.cover = await downloadAsset('grids', 'Covers', '.jpg');
+        results.background = await downloadAsset('heroes', 'Backgrounds', '.jpg');
+        results.logo = await downloadAsset('logos', 'Logos', '.png');
+        results.icon = await downloadAsset('icons', 'Icons', '.png');
     } catch (err) {
         console.error('SteamGridDB Search Error:', err.message);
     }
@@ -160,7 +188,7 @@ ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
         const isUri = /^[a-z][a-z\d+.-]*:\/\//i.test(executablePath);
         const extension = path.extname(executablePath).toLowerCase();
         const isMac = process.platform === 'darwin';
-        const isAppBundle = isMac && (extension === '.app' || extension === '.dmg');
+        const isAppBundle = isMac && extension === '.app';
         const usesWindowsLauncher = process.platform === 'win32' && (isUri || extension === '.lnk' || extension === '.url');
 
         const child = isAppBundle
@@ -364,9 +392,9 @@ ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameI
 ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, oldPath, protectedPaths = [] }) => {
     let temporaryPath = null;
     try {
-        const folderMap = { cover: 'HB-Launcher-Covers', icon: 'HB-Launcher-Icons', background: 'HB-Launcher-Backgrounds', logo: 'HB-Launcher-Logos' };
-        const folderName = folderMap[type] || 'HB-Launcher-Assets';
-        const folder = path.join(app.getPath('documents'), folderName);
+        const folderMap = { cover: 'Covers', icon: 'Icons', background: 'Backgrounds', logo: 'Logos' };
+        const folderName = folderMap[type] || 'Assets';
+        const folder = path.join(app.getPath('documents'), 'HB-Launcher', folderName);
         if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
         
         let localPath = '';
@@ -467,7 +495,7 @@ ipcMain.on('add-game-requested', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ['openFile'],
         treatPackageAsDirectory: false,
-        filters: [{ name: 'Executables & Applications', extensions: ['exe', 'app', 'dmg', 'bat', 'cmd', 'lnk', 'url', 'sh'] }]
+        filters: [{ name: 'Executables & Applications', extensions: ['exe', 'app', 'bat', 'cmd', 'lnk', 'url', 'sh'] }]
     });
     if (canceled || filePaths.length === 0) return;
 
@@ -481,7 +509,7 @@ ipcMain.on('add-game-requested', async (event) => {
 
 ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
     const name = typeof gameName === 'string' ? gameName.trim() : '';
-    const supportedExtensions = new Set(['.exe', '.app', '.dmg', '.bat', '.cmd', '.lnk', '.url', '.sh']);
+    const supportedExtensions = new Set(['.exe', '.app', '.bat', '.cmd', '.lnk', '.url', '.sh']);
     if (!name || !filePath || !fs.existsSync(filePath) || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return;
 
     const gameId = 'game-' + Date.now();
@@ -505,7 +533,7 @@ ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
             const nativeImg = await app.getFileIcon(filePath, { size: 'normal' });
             const base64Data = nativeImg.toDataURL().replace(/^data:image\/png;base64,/, "");
             const docsPath = app.getPath('documents');
-            const iconFolder = path.join(docsPath, 'HB-Launcher-Icons');
+            const iconFolder = path.join(docsPath, 'HB-Launcher', 'Icons');
             if (!fs.existsSync(iconFolder)) fs.mkdirSync(iconFolder, { recursive: true });
             
             const p = path.join(iconFolder, `${gameId}.png`);
@@ -531,7 +559,7 @@ ipcMain.handle('select-game', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ 
         properties: ['openFile'], 
         treatPackageAsDirectory: false,
-        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'app', 'dmg', 'url', 'lnk', 'sh'] }] 
+        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'app', 'url', 'lnk', 'sh'] }] 
     });
     return canceled ? null : filePaths[0];
 });

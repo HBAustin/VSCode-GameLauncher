@@ -1,6 +1,13 @@
 const { ipcRenderer, webFrame } = require('electron');
 const fs = require('fs');
 
+// --- System Platform Tagging for CSS Glass & Titlebar Offsets ---
+if (process.platform === 'darwin') {
+    document.body.classList.add('is-mac');
+} else if (process.platform === 'win32') {
+    document.body.classList.add('is-win');
+}
+
 const library = document.getElementById('library');
 const contentWrapper = document.getElementById('contentWrapper');
 const fullScreenBtn = document.getElementById('fullScreenBtn');
@@ -96,10 +103,10 @@ function ensureSettingsDefaults(settings) {
     settings.customColors = settings.customColors || {};
     settings.customFonts = settings.customFonts || {};
     settings.customLayout = settings.customLayout || {};
-    settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#1a1a1a';
-    settings.customColors.surface ??= getComputedStyle(document.documentElement).getPropertyValue('--card-bg') || '#2a2a2a';
-    settings.customColors.text ??= getComputedStyle(document.documentElement).getPropertyValue('--text') || '#e0e0e0';
-    settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#6366f1';
+    settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || 'rgba(10, 10, 10, 0.72)';
+    settings.customColors.surface ??= getComputedStyle(document.documentElement).getPropertyValue('--card-bg') || 'rgba(255, 255, 255, 0.05)';
+    settings.customColors.text ??= getComputedStyle(document.documentElement).getPropertyValue('--text') || '#ffffff';
+    settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#0078d4';
     settings.customFonts.family ??= document.body.style.fontFamily || '';
     settings.customFonts.sizeBase ??= document.body.style.fontSize || '';
     settings.customLayout.customScaleEnabled ??= false;
@@ -130,11 +137,18 @@ const applySettings = (settings) => {
     const root = document.documentElement;
     const colors = settings.customColors || {};
     
-    if (colors.background) root.style.setProperty('--bg', colors.background);
+    // On macOS, preserve alpha transparency for Liquid Glass vibrancy
+    if (process.platform === 'darwin') {
+        root.style.setProperty('--bg', 'rgba(12, 12, 12, 0.65)');
+    } else if (colors.background) {
+        root.style.setProperty('--bg', colors.background);
+    }
+
     if (colors.surface) root.style.setProperty('--card-bg', colors.surface);
     if (colors.text) root.style.setProperty('--text', colors.text);
     if (colors.accent) root.style.setProperty('--accent', colors.accent);
     root.style.setProperty('--accent-contrast', getAccentTextColor(colors.accent || getComputedStyle(root).getPropertyValue('--accent').trim()));
+
     const isAcrylicTheme = settings.theme === 'liquidGlass';
     document.body.classList.toggle('windows-acrylic-theme', isAcrylicTheme);
     const windowMaterial = isAcrylicTheme ? 'acrylic' : 'none';
@@ -157,11 +171,6 @@ const applySettings = (settings) => {
     try {
         const bg = (colors.background || getComputedStyle(root).getPropertyValue('--bg') || '#000').trim();
         const surface = (colors.surface || getComputedStyle(root).getPropertyValue('--card-bg') || '#111').trim();
-        const backgroundLuminance = luminance(hexToRgb(bg));
-        const detailSurface = adjustHex(bg, backgroundLuminance < 0.5 ? 5 : -5);
-        const detailLuminance = luminance(hexToRgb(detailSurface));
-        root.style.setProperty('--detail-surface', detailSurface);
-        root.style.setProperty('--detail-text', detailLuminance > 0.179 ? '#111' : '#fff');
         const isPreset = settings.theme && settings.theme !== 'custom';
         const headerColor = isPreset
             ? getAutoHeaderTextColor(surface || bg)
@@ -186,14 +195,7 @@ const applySettings = (settings) => {
             element.style.color = headerColor;
         });
 
-        let hover;
-        try {
-            const surfLum = luminance(hexToRgb(surface));
-            hover = surfLum < 0.5 ? adjustHex(surface, 8) : adjustHex(surface, -6);
-        } catch (e) {
-            hover = 'rgba(255,255,255,0.06)';
-        }
-        root.style.setProperty('--card-bg-hover', hover);
+        root.style.setProperty('--card-bg-hover', 'rgba(255,255,255,0.12)');
     } catch (e) { console.error('Error computing derived theme colors:', e); }
 };
 
@@ -210,15 +212,6 @@ function luminance({r,g,b}) {
         return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
     });
     return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
-}
-
-function adjustHex(hex, percent) {
-    const {r,g,b} = hexToRgb(hex);
-    const amt = Math.round(255 * (percent/100));
-    const nr = Math.max(0, Math.min(255, r + amt));
-    const ng = Math.max(0, Math.min(255, g + amt));
-    const nb = Math.max(0, Math.min(255, b + amt));
-    return `#${((1<<24) + (nr<<16) + (ng<<8) + nb).toString(16).slice(1)}`;
 }
 
 function getAutoHeaderTextColor(bgHex) {
@@ -430,8 +423,8 @@ const showSettingsModal = async () => {
 
 const updateColorInputs = () => {
     document.getElementById('colorBg').value = currentSettings.customColors.background || '#1a1a1a';
-    document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#6366f1';
-    document.getElementById('colorText').value = currentSettings.customColors.text || '#e0e0e0';
+    document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#0078d4';
+    document.getElementById('colorText').value = currentSettings.customColors.text || '#ffffff';
     document.getElementById('colorCard').value = currentSettings.customColors.surface || '#2a2a2a';
     const customScaleEnabledEl = document.getElementById('customScaleEnabled');
     const customScaleEl = document.getElementById('customScale');
@@ -593,7 +586,7 @@ const exitFullScreenPreview = () => {
 const updateFullScreenButton = (isFull) => {
     isFullScreenMode = !!isFull;
     if (fullScreenBtn) {
-        fullScreenBtn.innerText = isFull ? '🗗 Exit Full Screen' : '⛶ Full Screen';
+        fullScreenBtn.innerText = isFull ? ' Exit Full Screen' : ' Full Screen';
     }
     document.body.classList.toggle('full-screen-mode', isFull);
     if (!isFull) {
@@ -1151,8 +1144,8 @@ async function applyListIcon(thumbEl, gameId, gameDataObj) {
             if (base64Icon) {
                 iconCache[gameId] = base64Icon;
                 thumbEl.style.backgroundImage = `url('${base64Icon}')`;
-            } else { thumbEl.innerHTML = '🎮'; }
-        } catch (err) { thumbEl.innerHTML = '🎮'; }
+            } else { thumbEl.innerHTML = ''; }
+        } catch (err) { thumbEl.innerHTML = ''; }
     }
 }
 
@@ -1183,13 +1176,13 @@ function renderLibrary() {
         if (viewMode === 'grid') {
             const hasCover = !!d.cover;
             if (hasCover) card.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(d.cover)}&t=${Date.now()}')`;
-            card.innerHTML = `<div class="fav-badge">★</div> ${!hasCover ? `<div class="fallback-title">${d.name}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${d.name}</div></div>`;
+            card.innerHTML = `<div class="fav-badge"></div> ${!hasCover ? `<div class="fallback-title">${d.name}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${d.name}</div></div>`;
             card.onclick = () => {
                 if (isFullScreenMode) selectListItem(id);
                 else launchItem(id);
             };
         } else {
-            card.innerHTML = `<div class="list-thumb"></div> <div class="list-title">${d.name}</div> <div class="fav-badge" style="position:static;">★</div>`;
+            card.innerHTML = `<div class="list-thumb"></div> <div class="list-title">${d.name}</div> <div class="fav-badge" style="position:static;"></div>`;
             applyListIcon(card.querySelector('.list-thumb'), id, d);
             card.onclick = () => { if (selectedListId === id) launchItem(id); else selectListItem(id); };
         }
@@ -1727,7 +1720,7 @@ function handleGamepadLoop() {
 ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('icon-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].icon = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); } });
-ipcRenderer.on('logo-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].logo = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
+ipcRenderer.on('logo-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].logo = path; saveToDisk(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
 
 loadLibrary();
 applyLayoutMode();
