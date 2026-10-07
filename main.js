@@ -159,21 +159,26 @@ ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
     try {
         const isUri = /^[a-z][a-z\d+.-]*:\/\//i.test(executablePath);
         const extension = path.extname(executablePath).toLowerCase();
+        const isMac = process.platform === 'darwin';
+        const isAppBundle = isMac && (extension === '.app' || extension === '.dmg');
         const usesWindowsLauncher = process.platform === 'win32' && (isUri || extension === '.lnk' || extension === '.url');
-        const child = usesWindowsLauncher
-            ? spawn('cmd.exe', ['/c', 'start', '', executablePath], {
-                detached: true,
-                stdio: 'ignore',
-                windowsHide: true
-            })
-            : fs.existsSync(executablePath)
-                ? spawn(executablePath, [], {
-                    cwd: path.dirname(executablePath),
+
+        const child = isAppBundle
+            ? spawn('open', [executablePath], { detached: true, stdio: 'ignore' })
+            : usesWindowsLauncher
+                ? spawn('cmd.exe', ['/c', 'start', '', executablePath], {
                     detached: true,
                     stdio: 'ignore',
                     windowsHide: true
                 })
-                : null;
+                : fs.existsSync(executablePath)
+                    ? spawn(executablePath, [], {
+                        cwd: path.dirname(executablePath),
+                        detached: true,
+                        stdio: 'ignore',
+                        windowsHide: process.platform === 'win32'
+                    })
+                    : null;
 
         if (!child) return;
         child.once('error', (err) => {
@@ -461,18 +466,22 @@ ipcMain.handle('select-asset-image', async () => {
 ipcMain.on('add-game-requested', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         properties: ['openFile'],
-        filters: [{ name: 'Executables', extensions: ['exe', 'bat', 'cmd', 'lnk', 'url'] }]
+        treatPackageAsDirectory: false,
+        filters: [{ name: 'Executables & Applications', extensions: ['exe', 'app', 'dmg', 'bat', 'cmd', 'lnk', 'url', 'sh'] }]
     });
     if (canceled || filePaths.length === 0) return;
 
     const filePath = filePaths[0];
-    const suggestedName = path.basename(filePath, path.extname(filePath));
+    const suggestedName = filePath.endsWith('.app') 
+        ? path.basename(filePath, '.app') 
+        : path.basename(filePath, path.extname(filePath));
+
     event.sender.send('confirm-add-game-name', { filePath, suggestedName });
 });
 
 ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
     const name = typeof gameName === 'string' ? gameName.trim() : '';
-    const supportedExtensions = new Set(['.exe', '.bat', '.cmd', '.lnk', '.url']);
+    const supportedExtensions = new Set(['.exe', '.app', '.dmg', '.bat', '.cmd', '.lnk', '.url', '.sh']);
     if (!name || !filePath || !fs.existsSync(filePath) || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return;
 
     const gameId = 'game-' + Date.now();
@@ -521,7 +530,8 @@ ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
 ipcMain.handle('select-game', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ 
         properties: ['openFile'], 
-        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'url', 'lnk'] }] 
+        treatPackageAsDirectory: false,
+        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'app', 'dmg', 'url', 'lnk', 'sh'] }] 
     });
     return canceled ? null : filePaths[0];
 });
