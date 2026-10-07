@@ -9,6 +9,7 @@ const librarySearch = document.getElementById('librarySearch');
 const addBtn = document.getElementById('addBtn');
 
 let SAVE_PATH = null;
+let currentWindowMaterial = null;
 
 let gameData = {};
 let sortedIds = [];
@@ -98,7 +99,7 @@ function ensureSettingsDefaults(settings) {
     settings.customFonts.sizeBase ??= document.body.style.fontSize || '';
     settings.customLayout.customScaleEnabled ??= false;
     settings.customLayout.customScale ??= 100;
-    settings.customLayout.useLogoOnHero ??= false;
+    settings.customLayout.useLogoOnHero ??= true;
     return settings;
 }
 
@@ -114,6 +115,12 @@ async function loadSettings() {
     }
 }
 
+function getAccentTextColor(accentHex) {
+    try {
+        return luminance(hexToRgb(accentHex)) > 0.179 ? '#111111' : '#ffffff';
+    } catch (e) { return '#ffffff'; }
+}
+
 const applySettings = (settings) => {
     const root = document.documentElement;
     const colors = settings.customColors || {};
@@ -122,6 +129,14 @@ const applySettings = (settings) => {
     if (colors.surface) root.style.setProperty('--card-bg', colors.surface);
     if (colors.text) root.style.setProperty('--text', colors.text);
     if (colors.accent) root.style.setProperty('--accent', colors.accent);
+    root.style.setProperty('--accent-contrast', getAccentTextColor(colors.accent || getComputedStyle(root).getPropertyValue('--accent').trim()));
+    const isAcrylicTheme = settings.theme === 'liquidGlass';
+    document.body.classList.toggle('windows-acrylic-theme', isAcrylicTheme);
+    const windowMaterial = isAcrylicTheme ? 'acrylic' : 'none';
+    if (currentWindowMaterial !== windowMaterial) {
+        currentWindowMaterial = windowMaterial;
+        ipcRenderer.send('set-window-material', windowMaterial);
+    }
     
     const fonts = settings.customFonts || {};
     if (fonts.sizeBase) document.body.style.fontSize = fonts.sizeBase;
@@ -212,6 +227,91 @@ function getAutoHeaderTextColor(bgHex) {
 }
 
 let activeSettingsTab = 'appearance';
+let settingsFocusIndex = 0;
+let settingsFocusedElement = null;
+
+function getSettingsFocusableElements() {
+    return Array.from(document.querySelectorAll(
+        '#settingsModal .settings-tab, #settingsModal .settings-mode-option, #themePresets button, #settingsModal summary, #settingsModal input:not([disabled]), #settingsModal .settings-actions button'
+    )).filter((element) => element.getClientRects().length > 0 && !element.closest('[hidden]'));
+}
+
+function applySettingsFocus() {
+    const elements = getSettingsFocusableElements();
+    if (!elements.length) return;
+    settingsFocusIndex = Math.max(0, Math.min(settingsFocusIndex, elements.length - 1));
+    document.querySelectorAll('#settingsModal .settings-focused').forEach((element) => element.classList.remove('settings-focused'));
+    settingsFocusedElement = elements[settingsFocusIndex];
+    settingsFocusedElement.classList.add('settings-focused');
+    settingsFocusedElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+}
+
+function moveSettingsFocus(horizontal, vertical) {
+    const elements = getSettingsFocusableElements();
+    if (!elements.length) return;
+    const currentIndex = elements.indexOf(settingsFocusedElement);
+    if (currentIndex < 0) {
+        settingsFocusIndex = 0;
+        applySettingsFocus();
+        return;
+    }
+
+    const current = elements[currentIndex];
+    if (horizontal && current.matches('#themePresets .theme-option')) {
+        const currentRect = current.getBoundingClientRect();
+        const currentX = currentRect.left + currentRect.width / 2;
+        const currentY = currentRect.top + currentRect.height / 2;
+        const sameRow = elements.filter((element) => {
+            if (!element.matches('#themePresets .theme-option') || element === current) return false;
+            const rect = element.getBoundingClientRect();
+            const centerY = rect.top + rect.height / 2;
+            return Math.abs(centerY - currentY) <= Math.max(currentRect.height, rect.height) * 0.55;
+        });
+        const neighbor = sameRow
+            .map((element) => ({
+                element,
+                distance: (element.getBoundingClientRect().left + element.getBoundingClientRect().width / 2 - currentX) * horizontal
+            }))
+            .filter((candidate) => candidate.distance > 0)
+            .sort((a, b) => a.distance - b.distance)[0];
+        if (neighbor) {
+            settingsFocusIndex = elements.indexOf(neighbor.element);
+            applySettingsFocus();
+        }
+        return;
+    }
+    if (horizontal && current.type === 'range' && !current.disabled) {
+        const step = Number(current.step) || 1;
+        current.value = String(Math.max(Number(current.min), Math.min(Number(current.max), Number(current.value) + horizontal * step)));
+        current.dispatchEvent(new Event('input', { bubbles: true }));
+        current.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+    }
+
+    const currentRect = current.getBoundingClientRect();
+    const currentX = currentRect.left + currentRect.width / 2;
+    const currentY = currentRect.top + currentRect.height / 2;
+    let nextIndex = currentIndex;
+    let bestScore = Infinity;
+    elements.forEach((element, index) => {
+        if (index === currentIndex) return;
+        const rect = element.getBoundingClientRect();
+        const deltaX = rect.left + rect.width / 2 - currentX;
+        const deltaY = rect.top + rect.height / 2 - currentY;
+        const primary = horizontal ? deltaX * horizontal : deltaY * vertical;
+        if (primary <= 0) return;
+        const perpendicular = horizontal ? Math.abs(deltaY) : Math.abs(deltaX);
+        const score = primary + perpendicular * 1.5;
+        if (score < bestScore) {
+            bestScore = score;
+            nextIndex = index;
+        }
+    });
+    if (nextIndex !== currentIndex) {
+        settingsFocusIndex = nextIndex;
+        applySettingsFocus();
+    }
+}
 
 function activateSettingsTab(tabName) {
     activeSettingsTab = tabName;
@@ -224,7 +324,35 @@ function activateSettingsTab(tabName) {
     document.querySelectorAll('.settings-panel').forEach((panel) => {
         panel.hidden = panel.dataset.settingsPanel !== tabName;
     });
+    if (currentZone === 'settingsModal' && isControllerMode) requestAnimationFrame(applySettingsFocus);
 }
+
+function activateThemeMode(mode, focusButton = null) {
+    const activeMode = mode === 'themes' ? 'themes' : 'custom';
+    document.querySelectorAll('.settings-mode-option').forEach((button) => {
+        const isActive = button.dataset.themeMode === activeMode;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', String(isActive));
+    });
+    document.querySelectorAll('[data-theme-view]').forEach((view) => {
+        view.hidden = view.dataset.themeView !== activeMode;
+    });
+    if (activeMode === 'custom') currentSettings.theme = 'custom';
+
+    if (currentZone === 'settingsModal' && isControllerMode) {
+        requestAnimationFrame(() => {
+            const elements = getSettingsFocusableElements();
+            const target = focusButton || document.querySelector(`[data-theme-mode="${activeMode}"]`);
+            const targetIndex = elements.indexOf(target);
+            if (targetIndex >= 0) settingsFocusIndex = targetIndex;
+            applySettingsFocus();
+        });
+    }
+}
+
+document.querySelectorAll('.settings-mode-option').forEach((button) => {
+    button.addEventListener('click', () => activateThemeMode(button.dataset.themeMode, button));
+});
 
 document.querySelectorAll('.settings-tab').forEach((tab) => {
     tab.addEventListener('click', () => activateSettingsTab(tab.dataset.settingsTab));
@@ -253,23 +381,29 @@ const showSettingsModal = async () => {
         themes.forEach(theme => {
             try {
                 const btn = document.createElement('button');
-                btn.className = 'menu-btn';
-                btn.textContent = theme.name;
-                btn.style.cssText = `
-                    background: ${theme.preview.colors.surface};
-                    color: ${theme.preview.colors.text};
-                    border-color: ${currentSettings.theme === theme.id ? theme.preview.colors.accent : '#333'};
-                    border-width: ${currentSettings.theme === theme.id ? '3px' : '2px'};
-                `;
+                btn.className = 'theme-option';
+                btn.dataset.themeId = theme.id;
+                btn.setAttribute('aria-pressed', String(currentSettings.theme === theme.id));
+                btn.innerHTML = '<span class="theme-option-swatch" aria-hidden="true"></span><span class="theme-option-copy"><span class="theme-option-name"></span><small class="theme-option-note" hidden></small></span>';
+                btn.querySelector('.theme-option-name').textContent = theme.name;
+                const note = btn.querySelector('.theme-option-note');
+                if (theme.experimental) {
+                    note.id = `theme-performance-${theme.id}`;
+                    note.textContent = 'Experimental; blur may affect older GPUs.';
+                    note.hidden = false;
+                    btn.setAttribute('aria-describedby', note.id);
+                }
+                btn.querySelector('.theme-option-swatch').style.backgroundColor = theme.preview.colors.accent;
                 btn.onclick = async () => {
                     try {
                         const preset = await ipcRenderer.invoke('get-theme-preset', theme.id);
                         currentSettings.theme = theme.id;
                         currentSettings.customColors = { ...preset.colors };
                         currentSettings.customFonts = { ...preset.fonts };
+                        presetsContainer.querySelectorAll('.theme-option').forEach((option) => option.setAttribute('aria-pressed', 'false'));
+                        btn.setAttribute('aria-pressed', 'true');
                         updateColorInputs();
                         applySettings(currentSettings);
-                        showSettingsModal();
                     } catch (e) { console.error('Error applying preset:', e); }
                 };
                 presetsContainer.appendChild(btn);
@@ -277,6 +411,7 @@ const showSettingsModal = async () => {
         });
 
         updateColorInputs();
+        activateThemeMode(currentSettings.theme === 'custom' ? 'custom' : 'themes');
         activateSettingsTab(activeSettingsTab);
         openModal('settings');
     } catch (err) {
@@ -328,7 +463,6 @@ const saveSettings = async () => {
         if (customScaleEl) currentSettings.customLayout.customScale = Number(customScaleEl.value);
         const useLogoEl = document.getElementById('useLogoOnHero');
         if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
-        currentSettings.theme = 'custom';
         currentSettings = ensureSettingsDefaults(currentSettings);
 
         const safeSettings = {
@@ -415,12 +549,6 @@ ipcRenderer.on('settings-updated', (settings) => {
 loadSettings();
 
 const applyLayoutMode = () => {
-    contentWrapper.className = `content-wrapper ${viewMode}-mode`;
-    if (isFullScreenPreviewActive) {
-        document.body.classList.add('full-screen-preview');
-    } else {
-        document.body.classList.remove('full-screen-preview');
-    }
     if (!isFullScreenMode) {
         viewMode = 'list';
         isFullScreenPreviewActive = false;
@@ -428,6 +556,7 @@ const applyLayoutMode = () => {
         if (!isFullScreenPreviewActive) viewMode = 'grid';
     }
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
+    document.body.classList.toggle('full-screen-preview', isFullScreenPreviewActive);
     renderLibrary();
 };
 
@@ -467,7 +596,7 @@ const updateFullScreenButton = (isFull) => {
 
 if (fullScreenBtn) {
     fullScreenBtn.onclick = () => {
-        ipcRenderer.send('toggle-fullscreen');
+        ipcRenderer.send('set-fullscreen', !isFullScreenMode);
     };
 }
 
@@ -1071,6 +1200,10 @@ function openModal(modalName) {
     renameFocusIndex = 0;
     customizeActionMode = false;
     customizeActionIndex = 0;
+    if (modalName === 'settings') {
+        settingsFocusIndex = 0;
+        settingsFocusedElement = null;
+    }
     document.getElementById(`${currentZone}`).style.display = 'flex';
     
     if (modalName === 'context') {
@@ -1284,9 +1417,14 @@ window.addEventListener('keydown', (e) => {
     if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput') && document.activeElement !== document.getElementById('steamGridApiKey')) {
         setControllerActive(false);
     }
-    if (e.key === 'Escape' && isFullScreenPreviewActive) {
-        exitFullScreenPreview();
-        e.preventDefault();
+    if (e.key === 'Escape') {
+        if (isFullScreenPreviewActive) {
+            exitFullScreenPreview();
+            e.preventDefault();
+        } else if (isFullScreenMode) {
+            ipcRenderer.send('set-fullscreen', false);
+            e.preventDefault();
+        }
     }
 });
 
@@ -1340,6 +1478,9 @@ function applyFocus() {
             const actionBtns = document.querySelectorAll('#renameActionsRow .menu-btn');
             if (actionBtns[renameFocusIndex - 1]) actionBtns[renameFocusIndex - 1].classList.add('focused');
         }
+    }
+    else if (currentZone === 'settingsModal') {
+        applySettingsFocus();
     }
     else if (currentZone === 'header') {
         const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
@@ -1408,6 +1549,16 @@ function handleGamepadLoop() {
                 const btns = document.querySelectorAll('#contextOptionsList .menu-btn');
                 if (down && modalFocusIndex + 1 < btns.length) { modalFocusIndex++; moved = true; }
                 if (up && modalFocusIndex > 0) { modalFocusIndex--; moved = true; }
+            }
+            else if (currentZone === 'settingsModal') {
+                const horizontal = (right ? 1 : 0) - (left ? 1 : 0);
+                const vertical = (down ? 1 : 0) - (up ? 1 : 0);
+                if (horizontal || vertical) {
+                    const previousFocus = settingsFocusedElement;
+                    const wasRange = previousFocus?.type === 'range' && !previousFocus.disabled && horizontal;
+                    moveSettingsFocus(horizontal, vertical);
+                    moved = settingsFocusedElement !== previousFocus || !!wasRange;
+                }
             }
             else if (currentZone === 'customizeModal') {
                 const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
@@ -1483,7 +1634,14 @@ function handleGamepadLoop() {
         const pressedX = activeGp.buttons[2].pressed && !lastButtonState[2] || (activeGp.buttons[3].pressed && !lastButtonState[3]);
 
         if (pressedA) {
-            if (currentZone === 'contextModal') { document.querySelectorAll('#contextOptionsList .menu-btn')[modalFocusIndex]?.click(); }
+            if (currentZone === 'settingsModal') {
+                const focusedElement = settingsFocusedElement;
+                if (focusedElement) {
+                    if (focusedElement.matches('input[type="text"], input[type="password"]')) focusedElement.focus();
+                    else focusedElement.click();
+                }
+            }
+            else if (currentZone === 'contextModal') { document.querySelectorAll('#contextOptionsList .menu-btn')[modalFocusIndex]?.click(); }
             else if (currentZone === 'customizeModal') {
                 const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
                 const activeRow = artworkRows[modalFocusIndex];
@@ -1522,7 +1680,9 @@ function handleGamepadLoop() {
         }
 
         if (pressedB) {
-            if (currentZone === 'customizeModal' && customizeActionMode) {
+            if (currentZone === 'settingsModal') {
+                closeModal();
+            } else if (currentZone === 'customizeModal' && customizeActionMode) {
                 customizeActionMode = false;
                 applyFocus();
             } else if (['contextModal', 'customizeModal', 'renameModal'].includes(currentZone)) {

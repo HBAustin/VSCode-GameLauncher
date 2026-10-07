@@ -10,19 +10,18 @@
         *::-webkit-scrollbar-track { background: var(--card-bg); }
         *::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--accent) 45%, #555); border: 3px solid var(--card-bg); border-radius: 8px; }
         *::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 2rem; overflow: hidden; height: 100vh; transition: padding-bottom 0.3s; display: flex; flex-direction: column; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: calc(0.75rem + env(titlebar-area-height, 0px)) 2rem 2rem; overflow: hidden; height: 100vh; transition: padding-bottom 0.3s; display: flex; flex-direction: column; }
         body.controller-mode { padding-bottom: 0; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-radius: 12px; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border, #222); color: var(--header-text); flex-shrink: 0; position: relative; }
-        .header h1 { margin: 0; z-index: 3; pointer-events: none; }
-        .header .controls { display: flex; gap: 0.75rem; align-items: center; z-index: 4; position: relative; }
-        .header .controls select, .header .controls #librarySearch, .header .controls .control-btn, .header .controls .api-input {
-            color: var(--header-text);
-            background: transparent;
-            border-color: transparent;
-            pointer-events: auto;
-        }
-        .header .controls .control-btn { border: 1px solid rgba(255,255,255,0.06); }
+        .header { display: flex; align-items: center; margin-bottom: 1rem; border-radius: 10px; padding: 10px; background: var(--card-bg); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); flex-shrink: 0; position: relative; }
+        .header .controls { display: flex; width: 100%; gap: 10px; align-items: center; flex-wrap: nowrap; z-index: 4; position: relative; }
+        .header .controls #librarySearch { flex: 1 1 auto; min-width: 0; height: 42px; padding: 0 14px; background: var(--bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 7px; }
+        .header .controls .sort-control { position: relative; flex: none; width: 156px; }
+        .header .controls .sort-control select { appearance: none; -webkit-appearance: none; width: 100%; min-width: 0; height: 42px; padding: 0 38px 0 12px; background: var(--bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 7px; }
+        .header .controls .sort-control::after { content: ''; position: absolute; top: 50%; right: 17px; width: 7px; height: 7px; border-right: 1.5px solid var(--text); border-bottom: 1.5px solid var(--text); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+        .header .controls .control-btn { flex: none; min-width: 0; height: 42px; padding: 0 14px; background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 7px; white-space: nowrap; }
+        .header .controls .control-btn:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card-bg)); border-color: var(--accent); }
+        .header .controls #settingsBtn { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
         .controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
         select, #librarySearch, .control-btn, .api-input { background: #1e1e1e; color: white; border: 1px solid #333; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; font-size: 0.85rem; min-width: 120px; }
         select option { background-color: var(--card-bg); color: var(--text); }
@@ -108,8 +107,8 @@
         .related-game-card:hover, .related-game-card:focus-visible { transform: translateY(-2px); border-color: var(--accent); }
         .related-game-art { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; background: var(--card-bg) center/cover no-repeat; color: var(--accent); font-size: 2rem; font-weight: 700; }
         .related-game-name { flex: none; height: 34px; padding: 8px; overflow: hidden; color: inherit; font-size: 0.72rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-        body.full-screen-mode { padding: 0; min-height: 100vh; }
-        body.full-screen-mode .header { padding: 1rem 1.5rem; border-radius: 0; margin: 0; border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 20; }
+        body.full-screen-mode { padding: max(40px, calc(env(titlebar-area-height, 0px) + 8px)) 0 0; min-height: 100vh; }
+        body.full-screen-mode .header { padding: 1rem 1.5rem; border-radius: 0; margin: 0; border-bottom: 1px solid rgba(255,255,255,0.08); position: relative; top: auto; z-index: 10001; }
         body.full-screen-mode .controls { gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; }
         body.full-screen-mode .control-btn, body.full-screen-mode select, body.full-screen-mode #librarySearch { min-width: 0; padding: 12px 14px; border-radius: 12px; font-size: 0.98rem; }
         body.full-screen-mode .header { flex-direction: row; align-items: center; }
@@ -143,49 +142,106 @@
             .dp-management-actions .dash-btn { flex: 1; white-space: normal; }
         }
 
-        #settingsModal .settings-modal-content { width: 95%; max-width: 840px; max-height: 90vh; min-height: min(520px, 90vh); padding: 24px; display: flex; flex-direction: column; gap: 16px; text-align: left; }
-        .settings-heading h2 { margin: 0; color: var(--accent); font-size: 1.35rem; }
-        .settings-heading p { margin: 6px 0 0; color: #92999d; font-size: 0.88rem; }
-        .settings-body { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 20px; flex: 1; min-height: 0; }
-        .settings-tabs { display: flex; flex-direction: column; gap: 4px; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.12); }
-        .settings-tab { flex: none; width: 100%; padding: 12px 10px; background: transparent; border: 0; border-radius: 4px; color: #a6adb1; font-size: 0.9rem; text-align: left; cursor: pointer; }
-        .settings-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-        .settings-tab.active { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, transparent); font-weight: 700; }
-        .settings-panels { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 8px; }
+        #settingsModal .settings-modal-content { width: min(94vw, 900px); max-width: 900px; height: min(660px, 88vh); min-height: 420px; padding: 28px 32px 22px; display: flex; flex-direction: column; gap: 24px; text-align: left; border-radius: 14px; background: var(--bg); color: var(--text); border-color: color-mix(in srgb, var(--text) 18%, transparent); }
+        .settings-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+        .settings-eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 0.72rem; font-weight: 750; text-transform: uppercase; }
+        .settings-heading h2 { margin: 0; color: var(--text); font-size: 1.55rem; }
+        .settings-heading p { margin: 6px 0 0; color: color-mix(in srgb, var(--text) 64%, transparent); font-size: 0.88rem; }
+        .settings-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 36px; flex: 1; min-height: 0; }
+        .settings-tabs { display: flex; flex-direction: column; gap: 8px; }
+        .settings-tab { width: 100%; min-height: 66px; padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; gap: 3px; background: transparent; border: 0; border-radius: 7px; color: color-mix(in srgb, var(--text) 72%, transparent); text-align: left; cursor: pointer; }
+        .settings-tab span { font-size: 0.94rem; font-weight: 700; }
+        .settings-tab small { color: color-mix(in srgb, currentColor 70%, transparent); font-size: 0.76rem; }
+        .settings-tab:hover, .settings-tab.active { color: var(--text); background: color-mix(in srgb, var(--accent) 14%, var(--card-bg)); }
+        .settings-tab.active { color: var(--accent-contrast); background: var(--accent); }
+        .settings-panels { min-width: 0; min-height: 0; overflow-y: auto; padding: 6px 8px 12px 6px; }
         .settings-panel[hidden] { display: none; }
-        .settings-section { padding: 14px 0 18px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .settings-appearance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; align-items: start; }
-        .settings-appearance-grid .settings-section:first-child { padding-right: 24px; }
-        .settings-appearance-grid .settings-section + .settings-section { padding-left: 24px; border-left: 1px solid rgba(255,255,255,0.16); }
-        .settings-section h3 { margin: 0 0 14px; color: #dce1e3; font-size: 0.95rem; font-weight: 650; }
-        .theme-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 8px; }
-        #themePresets .menu-btn { min-height: 48px; text-align: left; }
-        .settings-color-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-        .settings-color-field { min-width: 0; min-height: 48px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; color: #cbd0d2; font-size: 0.85rem; }
-        .settings-color-field span { white-space: nowrap; }
-        .settings-color-field input { width: 44px; height: 34px; padding: 2px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: transparent; cursor: pointer; }
-        .settings-toggle { min-height: 48px; margin-top: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; color: #dce1e3; font-size: 0.88rem; cursor: pointer; }
-        .settings-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
-        .settings-field-label { display: block; margin-bottom: 8px; color: #aeb5b9; font-size: 0.82rem; }
-        .settings-text-input { width: 100%; padding: 12px; background: var(--bg); color: var(--text); border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; font-size: 0.9rem; }
-        .settings-scale-control { margin-top: 18px; }
-        .settings-scale-control label { display: flex; justify-content: space-between; margin-bottom: 10px; color: #cbd0d2; font-size: 0.85rem; }
+        .settings-panel h3 { margin: 0; color: var(--text); font-size: 1.05rem; font-weight: 700; }
+        .settings-panel-intro { margin: 6px 0 22px; color: color-mix(in srgb, var(--text) 64%, transparent); font-size: 0.86rem; line-height: 1.5; }
+        .settings-mode-switch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 18px; padding: 4px; background: var(--card-bg); border-radius: 8px; }
+        .settings-mode-option { min-height: 42px; padding: 8px 12px; background: transparent; color: color-mix(in srgb, var(--text) 72%, transparent); border: 0; border-radius: 6px; font: inherit; font-size: 0.86rem; font-weight: 650; cursor: pointer; }
+        .settings-mode-option:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 12%, var(--card-bg)); }
+        .settings-mode-option.active { background: var(--accent); color: var(--accent-contrast); }
+        .settings-theme-view[hidden], .settings-color-view[hidden] { display: none; }
+        .settings-color-view .settings-color-grid { margin-top: 8px; }
+        .settings-group { margin-top: 24px; }
+        .settings-group-label { margin: 0 0 12px; color: color-mix(in srgb, var(--text) 72%, transparent); font-size: 0.78rem; font-weight: 700; }
+        .theme-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .theme-option { min-height: 62px; padding: 10px 12px; display: flex; align-items: center; gap: 12px; background: var(--card-bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 7px; text-align: left; cursor: pointer; }
+        .theme-option:hover, .theme-option[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--card-bg)); }
+        .theme-option-name { flex: 1; font-size: 0.86rem; font-weight: 700; }
+        .theme-option-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .theme-option-note { color: color-mix(in srgb, var(--text) 62%, transparent); font-size: 0.68rem; line-height: 1.2; }
+        .theme-option-note[hidden] { display: none; }
+        .theme-option-swatch { width: 30px; height: 30px; flex: none; background: var(--theme-accent); border: 1px solid color-mix(in srgb, var(--text) 24%, transparent); border-radius: 7px; }
+        .theme-option[data-theme-id="light"] .theme-option-swatch { border-color: #111; }
+        .settings-color-details { margin-top: 16px; }
+        .settings-color-details summary { width: fit-content; padding: 7px 0; color: color-mix(in srgb, var(--text) 72%, transparent); font-size: 0.82rem; cursor: pointer; }
+        .settings-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; padding-top: 8px; }
+        .settings-color-field { min-width: 0; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: 0.85rem; }
+        .settings-color-field input { width: 42px; height: 32px; padding: 2px; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); border-radius: 4px; background: transparent; cursor: pointer; }
+        .settings-toggle { min-height: 50px; margin-top: 18px; padding: 10px 0; display: flex; align-items: center; gap: 12px; color: var(--text); font-size: 0.9rem; cursor: pointer; }
+        .settings-toggle input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+        .settings-field-label { display: block; margin: 22px 0 8px; color: var(--text); font-size: 0.84rem; font-weight: 650; }
+        .settings-text-input { width: 100%; min-height: 48px; padding: 12px 14px; background: var(--card-bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--text) 24%, transparent); border-radius: 6px; font-size: 0.9rem; }
+        .settings-scale-control { max-width: 540px; margin-top: 26px; }
+        .settings-scale-control label { display: flex; justify-content: space-between; margin-bottom: 16px; color: var(--text); font-size: 0.9rem; }
+        .settings-scale-control output { color: var(--text); font-weight: 700; }
         .settings-scale-control input { width: 100%; accent-color: var(--accent); }
-        .settings-scale-control p { margin: 8px 0 0; color: #858d91; font-size: 0.8rem; }
-        .settings-actions { display: flex; flex: none; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.12); }
-        .settings-actions .menu-btn { min-height: 44px; text-align: center; }
-        .settings-save-btn { flex: 1.5; background: var(--accent); border-color: var(--accent); color: #fff; }
-        .settings-close-btn { flex: 1; }
-        @media (max-width: 520px) {
-            #settingsModal .settings-modal-content { padding: 18px; min-height: min(480px, 90vh); }
-            .settings-body { grid-template-columns: 100px minmax(0, 1fr); gap: 10px; }
-            .settings-tabs { padding-right: 6px; }
-            .dp-related { padding-left: 1.5rem; padding-right: 1.5rem; }
-            .settings-tab { padding: 10px 8px; font-size: 0.78rem; }
-            .settings-color-grid { grid-template-columns: minmax(0, 1fr); }
-            .settings-appearance-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
-            .settings-appearance-grid .settings-section:first-child { padding-right: 0; }
-            .settings-appearance-grid .settings-section + .settings-section { padding-left: 0; border-left: 0; }
+        .settings-scale-control p { margin: 12px 0 0; color: color-mix(in srgb, var(--text) 64%, transparent); font-size: 0.82rem; line-height: 1.5; }
+        .settings-actions { display: flex; flex: none; justify-content: flex-end; gap: 10px; padding-top: 4px; }
+        .settings-actions .menu-btn { min-width: 140px; min-height: 46px; text-align: center; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); color: var(--text); }
+        .settings-actions .settings-save-btn { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+        .settings-actions .settings-close-btn { background: var(--card-bg); }
+        .settings-focused, #settingsModal :focus-visible { outline: 2px solid var(--accent) !important; outline-offset: 3px; }
+        .settings-tab.settings-focused, .settings-mode-option.settings-focused, .theme-option.settings-focused, .settings-actions .settings-focused { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+        body.windows-acrylic-theme { background: transparent !important; }
+        body.windows-acrylic-theme .header,
+        body.windows-acrylic-theme #detail-panel,
+        body.windows-acrylic-theme .modal-content {
+            background-color: color-mix(in srgb, var(--card-bg) 24%, transparent);
+            background-image: none;
+            border-color: rgba(255,255,255,0.25);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 12px 30px rgba(0,0,0,0.2);
+        }
+        body.windows-acrylic-theme #settingsModal .settings-modal-content {
+            background-color: color-mix(in srgb, var(--bg) 24%, transparent);
+            background-image: none;
+        }
+        body.windows-acrylic-theme .modal { background: rgba(15,18,22,0.2); }
+        body.windows-acrylic-theme .dp-hero { background-color: color-mix(in srgb, var(--card-bg) 22%, transparent); }
+        body.windows-acrylic-theme .related-game-card,
+        body.windows-acrylic-theme .dp-screenshot { background-color: color-mix(in srgb, var(--card-bg) 18%, transparent); border-color: rgba(255,255,255,0.2); }
+        body.windows-acrylic-theme .footer { background: rgba(22,25,29,0.34); border-color: rgba(255,255,255,0.2); }
+        body.windows-acrylic-theme .content-wrapper.list-mode .game-card,
+        body.windows-acrylic-theme .theme-option,
+        body.windows-acrylic-theme .settings-mode-switch,
+        body.windows-acrylic-theme .settings-text-input,
+        body.windows-acrylic-theme .dp-action-row,
+        body.windows-acrylic-theme .dp-screenshots,
+        body.windows-acrylic-theme .dp-related {
+            background-color: color-mix(in srgb, var(--card-bg) 16%, transparent);
+            background-image: none;
+            border-color: rgba(255,255,255,0.18);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+        }
+        body.windows-acrylic-theme .theme-option[aria-pressed="true"] { border-color: var(--accent); }
+        body.windows-acrylic-theme .header .controls #librarySearch,
+        body.windows-acrylic-theme .header .controls .sort-control select,
+        body.windows-acrylic-theme .header .controls .control-btn:not(#settingsBtn) {
+            background-color: color-mix(in srgb, var(--card-bg) 24%, transparent);
+            background-image: none;
+        }
+        @media (max-width: 600px) {
+            #settingsModal .settings-modal-content { width: 96vw; height: min(700px, 92vh); min-height: 380px; padding: 22px 20px 18px; gap: 16px; }
+            .settings-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+            .settings-tabs { flex-direction: row; gap: 6px; }
+            .settings-tab { min-height: 48px; padding: 8px; align-items: center; text-align: center; }
+            .settings-tab small { display: none; }
+            .settings-tab.active { box-shadow: none; }
+            .settings-panels { padding: 6px 2px 12px; }
+            .theme-presets, .settings-color-grid { grid-template-columns: 1fr; }
+            .settings-actions .menu-btn { min-width: 0; flex: 1; }
         }
 
         /* MODALS */
@@ -237,14 +293,15 @@
 </head>
 <body>
     <div class="header" id="appHeader">
-        <h1>LIBRARY</h1>
         <div class="controls">
             <input type="text" id="librarySearch" placeholder="Search games..." data-header-idx="0">
-            <select id="sortSelect" data-header-idx="1">
-                <option value="alpha">Alphabetical</option>
-                <option value="added">Recently Added</option>
-                <option value="recent">Recently Played</option>
-            </select>
+            <div class="sort-control">
+                <select id="sortSelect" data-header-idx="1">
+                    <option value="alpha">Alphabetical</option>
+                    <option value="added">Recently Added</option>
+                    <option value="recent">Recently Played</option>
+                </select>
+            </div>
             <button class="control-btn" id="fullScreenBtn" data-header-idx="2">⛶ Full Screen</button>
             <button class="control-btn" id="addBtn" data-header-idx="3">+ Add</button>
             <button class="control-btn" id="settingsBtn" data-header-idx="4">Settings</button>
@@ -373,63 +430,64 @@
     <div id="settingsModal" class="modal">
         <div class="modal-content settings-modal-content">
             <header class="settings-heading">
-                <h2>Settings</h2>
-                <p>Personalize appearance, artwork search, and layout.</p>
+                <div><p class="settings-eyebrow">Launcher preferences</p><h2>Settings</h2><p>Make the launcher feel like yours.</p></div>
             </header>
             <div class="settings-body">
-                <div class="settings-tabs" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-                    <button class="settings-tab active" type="button" role="tab" aria-selected="true" aria-controls="settingsAppearance" data-settings-tab="appearance">Appearance</button>
-                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsArtwork" data-settings-tab="artwork">Artwork</button>
-                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsLayout" data-settings-tab="layout">Layout</button>
-                </div>
+                <nav class="settings-tabs" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
+                    <button class="settings-tab active" type="button" role="tab" aria-selected="true" aria-controls="settingsAppearance" data-settings-tab="appearance"><span>Look</span><small>Theme and artwork</small></button>
+                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsArtwork" data-settings-tab="artwork"><span>Artwork</span><small>SteamGridDB access</small></button>
+                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsLayout" data-settings-tab="layout"><span>Display</span><small>Scale and details</small></button>
+                </nav>
                 <div class="settings-panels">
-                <section class="settings-panel active" id="settingsAppearance" role="tabpanel" data-settings-panel="appearance">
-                    <div class="settings-appearance-grid">
-                        <div class="settings-section">
-                            <h3>Theme</h3>
-                            <div id="themePresets" class="theme-presets"></div>
+                    <section class="settings-panel active" id="settingsAppearance" role="tabpanel" data-settings-panel="appearance">
+                        <h3>Appearance</h3>
+                        <div class="settings-mode-switch" role="tablist" aria-label="Appearance mode">
+                            <button class="settings-mode-option active" type="button" role="tab" aria-selected="true" aria-controls="customThemeView" data-theme-mode="custom">Custom</button>
+                            <button class="settings-mode-option" type="button" role="tab" aria-selected="false" aria-controls="defaultThemesView" data-theme-mode="themes">Default Themes</button>
                         </div>
-                        <div class="settings-section">
-                            <h3>Custom colors</h3>
+                        <div class="settings-color-view" id="customThemeView" role="tabpanel" data-theme-view="custom">
                             <div class="settings-color-grid">
                                 <label class="settings-color-field" for="colorBg"><span>Background</span><input type="color" id="colorBg"></label>
                                 <label class="settings-color-field" for="colorAccent"><span>Accent</span><input type="color" id="colorAccent"></label>
                                 <label class="settings-color-field" for="colorText"><span>Text</span><input type="color" id="colorText"></label>
-                                <label class="settings-color-field" for="colorCard"><span>Card background</span><input type="color" id="colorCard"></label>
+                                <label class="settings-color-field" for="colorCard"><span>Game tiles</span><input type="color" id="colorCard"></label>
                             </div>
                         </div>
-                    </div>
-                    <label class="settings-toggle" for="useLogoOnHero">
-                        <input type="checkbox" id="useLogoOnHero">
-                        <span>Show game logos on detail artwork</span>
-                    </label>
-                </section>
-                <section class="settings-panel" id="settingsArtwork" role="tabpanel" data-settings-panel="artwork" hidden>
-                    <div class="settings-section">
-                        <h3>SteamGridDB</h3>
-                        <label class="settings-field-label" for="steamGridApiKey">API key</label>
-                        <input class="settings-text-input" type="password" id="steamGridApiKey" placeholder="Paste your API key">
-                    </div>
-                </section>
-                <section class="settings-panel" id="settingsLayout" role="tabpanel" data-settings-panel="layout" hidden>
-                    <div class="settings-section">
-                        <h3>Interface scale</h3>
+                        <div class="settings-theme-view" id="defaultThemesView" role="tabpanel" data-theme-view="themes" hidden>
+                            <div id="themePresets" class="theme-presets"></div>
+                        </div>
+                    </section>
+                    <section class="settings-panel" id="settingsArtwork" role="tabpanel" data-settings-panel="artwork" hidden>
+                        <h3>Artwork search</h3>
+                        <p class="settings-panel-intro">Connect SteamGridDB to find covers, backgrounds, logos, and icons for your games.</p>
+                        <label class="settings-field-label" for="steamGridApiKey">SteamGridDB API key</label>
+                        <input class="settings-text-input" type="password" id="steamGridApiKey" placeholder="Paste API key" autocomplete="off">
+                    </section>
+                    <section class="settings-panel" id="settingsLayout" role="tabpanel" data-settings-panel="layout" hidden>
+                        <h3>Display preferences</h3>
+                        <p class="settings-panel-intro">Adjust the interface size and how game details are presented.</p>
                         <label class="settings-toggle" for="customScaleEnabled">
                             <input type="checkbox" id="customScaleEnabled">
-                            <span>Use a custom scale</span>
+                            <span>Set a custom interface scale</span>
                         </label>
                         <div class="settings-scale-control">
-                            <label for="customScale"><span>Scale</span><output id="customScaleValue">100%</output></label>
+                            <label for="customScale"><span>Interface scale</span><output id="customScaleValue">100%</output></label>
                             <input type="range" id="customScale" min="75" max="200" step="5" value="100" disabled>
-                            <p>When disabled, the launcher follows the Windows display scale.</p>
+                            <p>Turn off custom scale to follow your Windows display setting.</p>
                         </div>
-                    </div>
-                </section>
+                        <div class="settings-group">
+                            <p class="settings-group-label">Game details</p>
+                            <label class="settings-toggle" for="useLogoOnHero" style="margin-top:0">
+                                <input type="checkbox" id="useLogoOnHero" checked>
+                                <span>Show game logos over detail artwork</span>
+                            </label>
+                        </div>
+                    </section>
                 </div>
             </div>
             <footer class="settings-actions">
-                <button class="menu-btn settings-save-btn" id="saveSettingsBtn">Save changes</button>
-                <button class="menu-btn settings-close-btn" id="closeSettingsBtn">Close</button>
+                <button class="menu-btn settings-close-btn" id="closeSettingsBtn" type="button">Close</button>
+                <button class="menu-btn settings-save-btn" id="saveSettingsBtn" type="button">Save changes</button>
             </footer>
         </div>
     </div>

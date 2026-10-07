@@ -15,7 +15,8 @@ function createWindow() {
     app.setAppUserModelId('com.hb.launcher.v1');
     win = new BrowserWindow({
         width: 1200, height: 850, minWidth: 800, minHeight: 600,
-        backgroundColor: '#0f0f0f',
+        frame: true,
+        backgroundColor: '#0a0a0a',
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
     });
     win.loadFile('index.html');
@@ -200,11 +201,20 @@ ipcMain.handle('get-user-data-path', () => {
     return userLibraryPath;
 });
 
-ipcMain.on('toggle-fullscreen', (event) => {
+ipcMain.on('set-fullscreen', (event, shouldBeFullScreen) => {
     if (!win || win.isDestroyed()) return;
-    const targetFullScreen = !win.isFullScreen();
+    const targetFullScreen = !!shouldBeFullScreen;
     win.setFullScreen(targetFullScreen);
     event.sender.send('fullscreen-changed', targetFullScreen);
+});
+
+ipcMain.on('set-window-material', (event, material) => {
+    if (process.platform !== 'win32' || !win || win.isDestroyed() || typeof win.setBackgroundMaterial !== 'function') return;
+    try {
+        win.setBackgroundMaterial(material === 'acrylic' ? 'acrylic' : 'none');
+    } catch (err) {
+        console.error('Failed to set window background material:', err);
+    }
 });
 
 ipcMain.on('show-game-context-menu', (event, gameData) => {
@@ -425,6 +435,7 @@ ipcMain.handle('get-all-themes', async (event) => {
     return Object.entries(THEMES).map(([key, theme]) => ({
         id: key,
         name: theme.name,
+        experimental: !!theme.experimental,
         preview: {
             colors: theme.colors,
             fonts: theme.fonts
