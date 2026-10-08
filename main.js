@@ -8,8 +8,8 @@ const THEMES = require('./themes/default-themes.js');
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
-app.commandLine.appendSwitch('enable-high-dpi-support', 'true');
-let win, pickerWin;
+let win = null;
+let pickerWin = null;
 
 function createWindow() {
     app.setAppUserModelId('com.hb.launcher.v1');
@@ -20,8 +20,6 @@ function createWindow() {
     win = new BrowserWindow({
         width: 1200, height: 850, minWidth: 800, minHeight: 600,
         frame: true,
-        
-        // --- Cross-Platform Modern Titlebar & Glass Styling ---
         titleBarStyle: isMac ? 'hiddenInset' : isWin ? 'hidden' : 'default',
         titleBarOverlay: isWin ? {
             color: '#00000000',
@@ -29,16 +27,12 @@ function createWindow() {
             height: 38
         } : false,
         trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
-        
-        // --- Translucency & Vibrancy ---
         vibrancy: isMac ? 'under-window' : undefined,
         visualEffectState: isMac ? 'active' : undefined,
-        backgroundColor: '#00000000', // Fully transparent background required for glass effects
-        
+        backgroundColor: '#00000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
     });
 
-    // Apply Windows 11 Acrylic Background Material
     if (isWin && typeof win.setBackgroundMaterial === 'function') {
         try {
             win.setBackgroundMaterial('acrylic');
@@ -50,14 +44,10 @@ function createWindow() {
     win.loadFile('index.html');
     win.on('closed', () => { win = null; });
     win.on('enter-full-screen', () => {
-        if (win && !win.isDestroyed()) {
-            win.webContents.send('fullscreen-changed', true);
-        }
+        if (win && !win.isDestroyed()) win.webContents.send('fullscreen-changed', true);
     });
     win.on('leave-full-screen', () => {
-        if (win && !win.isDestroyed()) {
-            win.webContents.send('fullscreen-changed', false);
-        }
+        if (win && !win.isDestroyed()) win.webContents.send('fullscreen-changed', false);
     });
     createApplicationMenu();
 }
@@ -75,9 +65,7 @@ function createApplicationMenu() {
         }] : []),
         {
             label: 'File',
-            submenu: [
-                isMac ? { role: 'close' } : { role: 'quit' }
-            ]
+            submenu: [ isMac ? { role: 'close' } : { role: 'quit' } ]
         },
         {
             label: 'View',
@@ -95,8 +83,7 @@ function createApplicationMenu() {
             ]
         }
     ];
-    const menu = Menu.buildFromTemplate(template);
-    Menu.setApplicationMenu(menu);
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function loadSettings() {
@@ -127,7 +114,10 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
     const headers = { Authorization: `Bearer ${apiKey}` };
 
     try {
-        const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
+        const searchRes = await axios.get(
+            `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`,
+            { headers }
+        );
         if (!searchRes.data.success || !searchRes.data.data.length) return results;
 
         const sgGameId = searchRes.data.data[0].id;
@@ -135,7 +125,10 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
 
         const downloadAsset = async (endpoint, folderName, ext) => {
             try {
-                const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}/game/${sgGameId}`, { headers });
+                const res = await axios.get(
+                    `https://www.steamgriddb.com/api/v2/${endpoint}/game/${sgGameId}`,
+                    { headers }
+                );
                 if (res.data.success && res.data.data.length > 0) {
                     const imgUrl = res.data.data[0].url;
                     const folder = path.join(docsPath, 'HB-Launcher', folderName);
@@ -152,10 +145,18 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
             return '';
         };
 
-        results.cover = await downloadAsset('grids', 'Covers', '.jpg');
-        results.background = await downloadAsset('heroes', 'Backgrounds', '.jpg');
-        results.logo = await downloadAsset('logos', 'Logos', '.png');
-        results.icon = await downloadAsset('icons', 'Icons', '.png');
+        // Parallel downloads instead of 4 sequential round-trips
+        const [cover, background, logo, icon] = await Promise.all([
+            downloadAsset('grids', 'Covers', '.jpg'),
+            downloadAsset('heroes', 'Backgrounds', '.jpg'),
+            downloadAsset('logos', 'Logos', '.png'),
+            downloadAsset('icons', 'Icons', '.png')
+        ]);
+
+        results.cover = cover;
+        results.background = background;
+        results.logo = logo;
+        results.icon = icon;
     } catch (err) {
         console.error('SteamGridDB Search Error:', err.message);
     }
@@ -168,7 +169,7 @@ app.whenReady().then(() => {
         try {
             const urlObj = new URL(request.url);
             const filePath = urlObj.searchParams.get('path');
-            if (filePath) {
+            if (filePath && fs.existsSync(filePath)) {
                 return net.fetch(pathToFileURL(filePath).href);
             }
             return new Response('Not Found', { status: 404 });
@@ -177,10 +178,17 @@ app.whenReady().then(() => {
             return new Response('Not Found', { status: 404 });
         }
     });
+
     createWindow();
+
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
 });
 
-app.on('window-all-closed', () => { app.quit(); });
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+});
 
 ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
     if (!executablePath) return;
@@ -195,23 +203,18 @@ ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
             ? spawn('open', [executablePath], { detached: true, stdio: 'ignore' })
             : usesWindowsLauncher
                 ? spawn('cmd.exe', ['/c', 'start', '', executablePath], {
-                    detached: true,
-                    stdio: 'ignore',
-                    windowsHide: true
+                    detached: true, stdio: 'ignore', windowsHide: true
                 })
                 : fs.existsSync(executablePath)
                     ? spawn(executablePath, [], {
                         cwd: path.dirname(executablePath),
-                        detached: true,
-                        stdio: 'ignore',
+                        detached: true, stdio: 'ignore',
                         windowsHide: process.platform === 'win32'
                     })
                     : null;
 
         if (!child) return;
-        child.once('error', (err) => {
-            console.error('Failed to execute game instance:', err);
-        });
+        child.once('error', (err) => console.error('Failed to execute game instance:', err));
         child.unref();
     } catch (err) {
         console.error("Failed to execute game instance:", err);
@@ -252,30 +255,33 @@ ipcMain.on('set-window-material', (event, material) => {
 
 ipcMain.on('show-game-context-menu', (event, gameData) => {
     const template = [
-        { label: `Play ${gameData.name}`, click: () => { event.sender.send('context-menu-play', gameData); } },
+        { label: `Play ${gameData.name}`, click: () => event.sender.send('context-menu-play', gameData) },
         { type: 'separator' },
-        { label: gameData.favorite ? 'Unfavorite' : 'Favorite', click: () => { event.sender.send('context-menu-fav', gameData); } },
-        { label: 'Rename Game', click: () => { event.sender.send('context-menu-rename', gameData); } },
-        { label: 'Customize Artwork...', click: () => { event.sender.send('context-menu-customize', gameData); } },
+        { label: gameData.favorite ? 'Unfavorite' : 'Favorite', click: () => event.sender.send('context-menu-fav', gameData) },
+        { label: 'Rename Game', click: () => event.sender.send('context-menu-rename', gameData) },
+        { label: 'Customize Artwork...', click: () => event.sender.send('context-menu-customize', gameData) },
         { type: 'separator' },
-        { label: 'Open File Location', click: () => { event.sender.send('context-menu-open-location', gameData); } },
-        { label: 'Change Game Path', click: () => { event.sender.send('context-menu-change-path', gameData); } },
+        { label: 'Open File Location', click: () => event.sender.send('context-menu-open-location', gameData) },
+        { label: 'Change Game Path', click: () => event.sender.send('context-menu-change-path', gameData) },
         { type: 'separator' },
-        { label: 'Remove from Library', click: () => { event.sender.send('context-menu-remove', gameData); } }
+        { label: 'Remove from Library', click: () => event.sender.send('context-menu-remove', gameData) }
     ];
-    const menu = Menu.buildFromTemplate(template);
-    menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(event.sender) });
 });
 
 function openPickerWindow(gameData, type) {
     if (pickerWin && !pickerWin.isDestroyed()) { pickerWin.focus(); return; }
     pickerWin = new BrowserWindow({
-        width: 800, height: 900, parent: win, modal: true, backgroundColor: '#1a1a1a',
+        width: 800, height: 900, parent: win || undefined, modal: false,
+        backgroundColor: '#1a1a1a',
         webPreferences: { nodeIntegration: true, contextIsolation: false }
     });
     pickerWin.loadFile('picker.html');
-    pickerWin.once('ready-to-show', () => { 
-        pickerWin.webContents.send('init-picker', { ...gameData, type }); 
+    pickerWin.on('closed', () => { pickerWin = null; });
+    pickerWin.webContents.once('did-finish-load', () => {
+        if (pickerWin && !pickerWin.isDestroyed()) {
+            pickerWin.webContents.send('init-picker', { ...gameData, type });
+        }
     });
 }
 
@@ -287,12 +293,15 @@ ipcMain.on('open-logo-picker', (event, data) => openPickerWindow(data, 'logo'));
 ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
     const settings = loadSettings();
     if (!settings.steamGridApiKey) return { success: false, error: 'No API Key configured in Settings' };
-
     const headers = { Authorization: `Bearer ${settings.steamGridApiKey}` };
     try {
-        const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
-        if (!searchRes.data.success || !searchRes.data.data.length) return { success: false, error: 'Game not found on SteamGridDB' };
-
+        const searchRes = await axios.get(
+            `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`,
+            { headers }
+        );
+        if (!searchRes.data.success || !searchRes.data.data.length) {
+            return { success: false, error: 'Game not found on SteamGridDB' };
+        }
         const parsed = searchRes.data.data.map(item => ({
             id: item.id,
             name: item.name || item.gameName || item.title || '',
@@ -301,7 +310,6 @@ ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
             slug: item.slug || '',
             releaseDate: item.released || item.release_date || item.releaseDate || ''
         }));
-
         return { success: true, data: parsed };
     } catch (err) {
         return { success: false, error: err.message };
@@ -309,7 +317,8 @@ ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
 });
 
 function normalizeSteamTitle(title) {
-    return String(title || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return String(title || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
@@ -321,18 +330,18 @@ ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
             params: { term: gameTitle, l: 'english', cc: 'US' },
             timeout: 15000
         });
-        const exactMatch = searchResponse.data?.items?.find(item => normalizeSteamTitle(item.name) === normalizedTitle);
+        const exactMatch = searchResponse.data?.items?.find(
+            item => normalizeSteamTitle(item.name) === normalizedTitle
+        );
         if (!exactMatch) return { success: false, error: 'No exact Steam Store title match was found.' };
 
         const appId = String(exactMatch.id);
         const [detailsResponse, recommendationsResponse] = await Promise.all([
             axios.get('https://store.steampowered.com/api/appdetails', {
-                params: { appids: appId, cc: 'US', l: 'en' },
-                timeout: 15000
+                params: { appids: appId, cc: 'US', l: 'en' }, timeout: 15000
             }),
             axios.get(`https://store.steampowered.com/recommended/morelike/app/${appId}/`, {
-                params: { cc: 'US', l: 'en' },
-                timeout: 15000
+                params: { cc: 'US', l: 'en' }, timeout: 15000
             }).catch(() => ({ data: '' }))
         ]);
 
@@ -346,7 +355,7 @@ ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
             appId,
             title: details.name || exactMatch.name,
             genres: (details.genres || []).map(genre => genre.description).filter(Boolean),
-            screenshots: (details.screenshots || []).slice(0, 12).map(screenshot => screenshot.path_full).filter(Boolean),
+            screenshots: (details.screenshots || []).slice(0, 12).map(s => s.path_full).filter(Boolean),
             recommendationsHtml: recommendationsResponse.data || ''
         };
     } catch (err) {
@@ -361,7 +370,6 @@ ipcMain.on('open-steam-game', (event, appId) => {
     }
 });
 
-// API integration for pulling options directly to the artwork picker
 ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameId) => {
     const settings = loadSettings();
     if (!settings.steamGridApiKey) return { success: false, error: 'No API Key configured in Settings' };
@@ -370,20 +378,30 @@ ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameI
     try {
         let selectedGameId = sgGameId;
         if (!selectedGameId) {
-            const searchRes = await axios.get(`https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`, { headers });
-            if (!searchRes.data.success || !searchRes.data.data.length) return { success: false, error: 'Game not found on SteamGridDB' };
+            const searchRes = await axios.get(
+                `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(gameName)}`,
+                { headers }
+            );
+            if (!searchRes.data.success || !searchRes.data.data.length) {
+                return { success: false, error: 'Game not found on SteamGridDB' };
+            }
             selectedGameId = searchRes.data.data[0].id;
         }
 
         const typeToEndpoint = { cover: 'grids', background: 'heroes', logo: 'logos', icon: 'icons' };
         const endpoint = typeToEndpoint[type] || 'grids';
 
-        const res = await axios.get(`https://www.steamgriddb.com/api/v2/${endpoint}/game/${selectedGameId}`, { headers });
+        const res = await axios.get(
+            `https://www.steamgriddb.com/api/v2/${endpoint}/game/${selectedGameId}`,
+            { headers }
+        );
         if (res.data.success && res.data.data.length > 0) {
-            return { success: true, data: res.data.data.slice(0, 30).map(item => ({ thumb: item.thumb, url: item.url })) };
-        } else {
-            return { success: false, error: 'No assets found for this category' };
+            return {
+                success: true,
+                data: res.data.data.slice(0, 30).map(item => ({ thumb: item.thumb, url: item.url }))
+            };
         }
+        return { success: false, error: 'No assets found for this category' };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -391,15 +409,25 @@ ipcMain.handle('fetch-steamgriddb-assets', async (event, gameName, type, sgGameI
 
 ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, oldPath, protectedPaths = [] }) => {
     let temporaryPath = null;
+    const sender = event.sender;
+
+    const notifyFailure = (message) => {
+        try {
+            if (!sender.isDestroyed()) sender.send('apply-asset-failed', { gameId, type, error: message });
+            if (pickerWin && !pickerWin.isDestroyed()) {
+                pickerWin.webContents.send('apply-asset-failed', { gameId, type, error: message });
+            }
+        } catch (_) { /* ignore */ }
+    };
+
     try {
         const folderMap = { cover: 'Covers', icon: 'Icons', background: 'Backgrounds', logo: 'Logos' };
         const folderName = folderMap[type] || 'Assets';
         const folder = path.join(app.getPath('documents'), 'HB-Launcher', folderName);
         if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-        
-        let localPath = '';
+
         const ext = (type === 'icon' || type === 'logo') ? '.png' : '.jpg';
-        localPath = path.join(folder, `${gameId}${ext}`);
+        const localPath = path.join(folder, `${gameId}${ext}`);
         temporaryPath = `${localPath}.tmp-${Date.now()}`;
 
         if (imagePath && fs.existsSync(imagePath)) {
@@ -411,29 +439,54 @@ ipcMain.on('apply-asset', async (event, { gameId, imageUrl, imagePath, type, old
             throw new Error('No asset source provided');
         }
 
-        const protectedPathSet = new Set(protectedPaths.map(assetPath => path.resolve(assetPath).toLowerCase()));
-        if (oldPath && fs.existsSync(oldPath) && path.resolve(oldPath) !== path.resolve(localPath) && !protectedPathSet.has(path.resolve(oldPath).toLowerCase())) {
+        // Move existing destination aside as a backup before swapping in the new file.
+        let backupPath = null;
+        if (fs.existsSync(localPath)) {
+            backupPath = `${localPath}.bak-${Date.now()}`;
+            fs.renameSync(localPath, backupPath);
+        }
+
+        try {
+            fs.renameSync(temporaryPath, localPath);
+        } catch (renameErr) {
+            // Restore backup on failure so we don't lose the original asset.
+            if (backupPath && fs.existsSync(backupPath)) {
+                try { fs.renameSync(backupPath, localPath); } catch (_) {}
+            }
+            throw renameErr;
+        }
+
+        if (backupPath && fs.existsSync(backupPath)) {
+            try { fs.unlinkSync(backupPath); } catch (_) {}
+        }
+
+        const protectedPathSet = new Set(protectedPaths.map(p => path.resolve(p).toLowerCase()));
+        if (oldPath && fs.existsSync(oldPath)
+            && path.resolve(oldPath) !== path.resolve(localPath)
+            && !protectedPathSet.has(path.resolve(oldPath).toLowerCase())) {
             try { fs.unlinkSync(oldPath); } catch (e) { console.error("Could not drop old asset image:", e); }
         }
-        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-        fs.renameSync(temporaryPath, localPath);
-        
+
         const channelMap = { cover: 'cover-updated', icon: 'icon-updated', background: 'bg-updated', logo: 'logo-updated' };
         const replyChannel = channelMap[type] || 'cover-updated';
-        
-        if (win) win.webContents.send(replyChannel, { id: gameId, path: localPath });
+
+        if (win && !win.isDestroyed()) win.webContents.send(replyChannel, { id: gameId, path: localPath });
         if (pickerWin && !pickerWin.isDestroyed()) pickerWin.close();
     } catch (err) {
         if (temporaryPath && fs.existsSync(temporaryPath)) {
-            try { fs.unlinkSync(temporaryPath); } catch (cleanupError) { console.error('Failed to clean temporary asset:', cleanupError); }
+            try { fs.unlinkSync(temporaryPath); } catch (e) { console.error('Failed to clean temporary asset:', e); }
         }
         console.error("Asset modification error:", err);
+        notifyFailure(err.message || 'Asset modification failed');
     }
 });
 
 ipcMain.on('delete-game-assets', (event, payload) => {
     const assetPaths = Array.isArray(payload) ? payload : payload?.assetPaths || [];
-    const protectedPaths = new Set((Array.isArray(payload) ? [] : payload?.protectedPaths || []).map(assetPath => path.resolve(assetPath).toLowerCase()));
+    const protectedPaths = new Set(
+        (Array.isArray(payload) ? [] : payload?.protectedPaths || [])
+            .map(p => path.resolve(p).toLowerCase())
+    );
     const deletedPaths = new Set();
     assetPaths.forEach(assetPath => {
         if (!assetPath) return;
@@ -443,14 +496,12 @@ ipcMain.on('delete-game-assets', (event, payload) => {
             try {
                 fs.unlinkSync(assetPath);
                 deletedPaths.add(normalizedPath);
-            } catch(e) { console.error("Error wiping asset index from drive:", e); }
+            } catch (e) { console.error("Error wiping asset index from drive:", e); }
         }
     });
 });
 
-ipcMain.handle('get-settings', async (event) => {
-    return loadSettings();
-});
+ipcMain.handle('get-settings', async () => loadSettings());
 
 ipcMain.handle('save-settings', async (event, settings) => {
     const success = saveSettings(settings);
@@ -460,31 +511,33 @@ ipcMain.handle('save-settings', async (event, settings) => {
     return { success };
 });
 
-ipcMain.handle('get-theme-preset', async (event, themeName) => {
-    return THEMES[themeName] || THEMES.dark;
-});
+ipcMain.handle('get-theme-preset', async (event, themeName) => THEMES[themeName] || THEMES.dark);
 
-ipcMain.handle('get-all-themes', async (event) => {
+ipcMain.handle('get-all-themes', async () => {
     return Object.entries(THEMES).map(([key, theme]) => ({
         id: key,
         name: theme.name,
         experimental: !!theme.experimental,
-        preview: {
-            colors: theme.colors,
-            fonts: theme.fonts
-        }
+        preview: { colors: theme.colors, fonts: theme.fonts }
     }));
 });
 
 ipcMain.handle('get-file-icon', async (event, filePath) => {
     try {
+        if (!filePath) return null;
+        // URI/URL pseudo-paths can't be resolved by app.getFileIcon.
+        if (/^[a-z][a-z\d+.-]*:\/\//i.test(filePath)) return null;
+        if (!fs.existsSync(filePath)) return null;
         const nativeImg = await app.getFileIcon(filePath, { size: 'normal' });
         return nativeImg.toDataURL();
     } catch (err) { return null; }
 });
 
 ipcMain.handle('select-asset-image', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+    const parentWindow = pickerWin && !pickerWin.isDestroyed()
+        ? pickerWin
+        : (win && !win.isDestroyed() ? win : undefined);
+    const { canceled, filePaths } = await dialog.showOpenDialog(parentWindow, {
         properties: ['openFile'],
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }]
     });
@@ -492,7 +545,7 @@ ipcMain.handle('select-asset-image', async () => {
 });
 
 ipcMain.on('add-game-requested', async (event) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || undefined, {
         properties: ['openFile'],
         treatPackageAsDirectory: false,
         filters: [{ name: 'Executables & Applications', extensions: ['exe', 'app', 'bat', 'cmd', 'lnk', 'url', 'sh'] }]
@@ -500,8 +553,8 @@ ipcMain.on('add-game-requested', async (event) => {
     if (canceled || filePaths.length === 0) return;
 
     const filePath = filePaths[0];
-    const suggestedName = filePath.endsWith('.app') 
-        ? path.basename(filePath, '.app') 
+    const suggestedName = filePath.endsWith('.app')
+        ? path.basename(filePath, '.app')
         : path.basename(filePath, path.extname(filePath));
 
     event.sender.send('confirm-add-game-name', { filePath, suggestedName });
@@ -510,14 +563,11 @@ ipcMain.on('add-game-requested', async (event) => {
 ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
     const name = typeof gameName === 'string' ? gameName.trim() : '';
     const supportedExtensions = new Set(['.exe', '.app', '.bat', '.cmd', '.lnk', '.url', '.sh']);
-    if (!name || !filePath || !fs.existsSync(filePath) || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return;
+    if (!name || !filePath || !fs.existsSync(filePath)
+        || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return;
 
     const gameId = 'game-' + Date.now();
-    
-    let coverPath = '';
-    let iconPath = '';
-    let logoPath = '';
-    let bgPath = '';
+    let coverPath = '', iconPath = '', logoPath = '', bgPath = '';
 
     const settings = loadSettings();
     if (settings.steamGridApiKey) {
@@ -535,33 +585,29 @@ ipcMain.on('add-game-name-confirmed', async (event, { filePath, gameName }) => {
             const docsPath = app.getPath('documents');
             const iconFolder = path.join(docsPath, 'HB-Launcher', 'Icons');
             if (!fs.existsSync(iconFolder)) fs.mkdirSync(iconFolder, { recursive: true });
-            
             const p = path.join(iconFolder, `${gameId}.png`);
             fs.writeFileSync(p, Buffer.from(base64Data, 'base64'));
             iconPath = p;
-        } catch(e) {
+        } catch (e) {
             console.error("Local executable binary shell icon collection failed:", e);
         }
     }
 
     event.sender.send('add-game-confirmed', {
-        id: gameId,
-        name,
-        path: filePath,
-        cover: coverPath,
-        background: bgPath,
-        logo: logoPath,
-        icon: iconPath
+        id: gameId, name, path: filePath,
+        cover: coverPath, background: bgPath, logo: logoPath, icon: iconPath
     });
 });
 
 ipcMain.handle('select-game', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({ 
-        properties: ['openFile'], 
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || undefined, {
+        properties: ['openFile'],
         treatPackageAsDirectory: false,
-        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'app', 'url', 'lnk', 'sh'] }] 
+        filters: [{ name: 'Games & Shortcuts', extensions: ['exe', 'app', 'url', 'lnk', 'sh'] }]
     });
     return canceled ? null : filePaths[0];
 });
 
-ipcMain.on('open-file-location', (event, filePath) => { if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath); });
+ipcMain.on('open-file-location', (event, filePath) => {
+    if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
+});
