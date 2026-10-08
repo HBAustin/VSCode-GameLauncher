@@ -103,10 +103,10 @@ function ensureSettingsDefaults(settings) {
     settings.customColors = settings.customColors || {};
     settings.customFonts = settings.customFonts || {};
     settings.customLayout = settings.customLayout || {};
-    settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || 'rgba(10, 10, 10, 0.72)';
+    settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || 'rgba(12, 12, 12, 0.65)';
     settings.customColors.surface ??= getComputedStyle(document.documentElement).getPropertyValue('--card-bg') || 'rgba(255, 255, 255, 0.05)';
     settings.customColors.text ??= getComputedStyle(document.documentElement).getPropertyValue('--text') || '#ffffff';
-    settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#0078d4';
+    settings.customColors.accent ??= getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#fc9677';
     settings.customFonts.family ??= document.body.style.fontFamily || '';
     settings.customFonts.sizeBase ??= document.body.style.fontSize || '';
     settings.customLayout.customScaleEnabled ??= false;
@@ -120,10 +120,12 @@ async function loadSettings() {
         const loaded = await ipcRenderer.invoke('get-settings');
         currentSettings = ensureSettingsDefaults(loaded);
         applySettings(currentSettings);
+        updateColorInputs(); // Populate DOM input fields upon initial load
     } catch (err) {
         console.error('Error loading settings:', err);
         currentSettings = ensureSettingsDefaults(currentSettings);
         applySettings(currentSettings);
+        updateColorInputs(); // Populate DOM input fields using defaults if load fails
     }
 }
 
@@ -137,7 +139,6 @@ const applySettings = (settings) => {
     const root = document.documentElement;
     const colors = settings.customColors || {};
     
-    // On macOS, preserve alpha transparency for Liquid Glass vibrancy
     if (process.platform === 'darwin') {
         root.style.setProperty('--bg', 'rgba(12, 12, 12, 0.65)');
     } else if (colors.background) {
@@ -368,7 +369,6 @@ document.querySelectorAll('.settings-tab').forEach((tab) => {
 
 const showSettingsModal = async () => {
     settingsBeforeEdit = cloneSettings(currentSettings);
-    document.getElementById('steamGridApiKey').value = currentSettings.steamGridApiKey || '';
     updateColorInputs();
     try {
         const themes = await ipcRenderer.invoke('get-all-themes');
@@ -382,6 +382,7 @@ const showSettingsModal = async () => {
         themes.forEach(theme => {
             try {
                 const btn = document.createElement('button');
+                btn.type = 'button';
                 btn.className = 'theme-option';
                 btn.dataset.themeId = theme.id;
                 btn.setAttribute('aria-pressed', String(currentSettings.theme === theme.id));
@@ -394,7 +395,7 @@ const showSettingsModal = async () => {
                     note.hidden = false;
                     btn.setAttribute('aria-describedby', note.id);
                 }
-                btn.querySelector('.theme-option-swatch').style.backgroundColor = theme.preview.colors.accent;
+                btn.querySelector('.theme-option-swatch').style.backgroundColor = theme.preview?.colors?.accent || theme.accent || '#fc9677';
                 btn.onclick = async () => {
                     try {
                         const preset = await ipcRenderer.invoke('get-theme-preset', theme.id);
@@ -422,21 +423,41 @@ const showSettingsModal = async () => {
 };
 
 const updateColorInputs = () => {
-    document.getElementById('colorBg').value = currentSettings.customColors.background || '#1a1a1a';
-    document.getElementById('colorAccent').value = currentSettings.customColors.accent || '#0078d4';
-    document.getElementById('colorText').value = currentSettings.customColors.text || '#ffffff';
-    document.getElementById('colorCard').value = currentSettings.customColors.surface || '#2a2a2a';
+    // Populate SteamGridDB API key field
+    const apiKeyEl = document.getElementById('steamGridApiKey');
+    if (apiKeyEl) {
+        apiKeyEl.value = currentSettings.steamGridApiKey || '';
+    }
+
+    // Populate theme color pickers
+    const colorBgEl = document.getElementById('colorBg');
+    if (colorBgEl) colorBgEl.value = currentSettings.customColors?.background || '#1a1a1a';
+    
+    const colorAccentEl = document.getElementById('colorAccent');
+    if (colorAccentEl) colorAccentEl.value = currentSettings.customColors?.accent || '#0078d4';
+    
+    const colorTextEl = document.getElementById('colorText');
+    if (colorTextEl) colorTextEl.value = currentSettings.customColors?.text || '#ffffff';
+    
+    const colorCardEl = document.getElementById('colorCard');
+    if (colorCardEl) colorCardEl.value = currentSettings.customColors?.surface || '#2a2a2a';
+
+    // Populate interface scale controls
     const customScaleEnabledEl = document.getElementById('customScaleEnabled');
     const customScaleEl = document.getElementById('customScale');
     const customScaleValueEl = document.getElementById('customScaleValue');
+    
     const customScaleEnabled = !!currentSettings.customLayout?.customScaleEnabled;
     const customScale = Math.max(75, Math.min(200, Number(currentSettings.customLayout?.customScale) || 100));
+    
     if (customScaleEnabledEl) customScaleEnabledEl.checked = customScaleEnabled;
     if (customScaleEl) {
         customScaleEl.value = customScale;
         customScaleEl.disabled = !customScaleEnabled;
     }
     if (customScaleValueEl) customScaleValueEl.textContent = `${customScale}%`;
+
+    // Populate hero logo display toggle
     const useLogoEl = document.getElementById('useLogoOnHero');
     if (useLogoEl) useLogoEl.checked = !!currentSettings.customLayout?.useLogoOnHero;
 };
@@ -545,6 +566,7 @@ if (customScaleEl) {
 ipcRenderer.on('settings-updated', (settings) => {
     currentSettings = ensureSettingsDefaults(settings);
     applySettings(currentSettings);
+    updateColorInputs();
 });
 
 loadSettings();
