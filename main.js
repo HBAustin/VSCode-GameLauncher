@@ -4,7 +4,22 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const axios = require('axios');
 const { pathToFileURL } = require('url');
-const THEMES = require('./themes/default-themes.js');
+const BASE_THEMES = require('./themes/default-themes.js');
+const THEMES = {
+    // Built-in "Dynamic" theme: the background and accent colour follow the selected game's artwork (see ui.js).
+    // Listed first; a theme with the same key in default-themes.js would take precedence.
+    dynamic: {
+        name: 'Dynamic',
+        colors: {
+            background: 'rgba(12, 12, 12, 0.65)',
+            surface: 'rgba(255, 255, 255, 0.05)',
+            text: '#ffffff',
+            accent: '#fc9677'
+        },
+        fonts: { ...((BASE_THEMES.dark || {}).fonts || {}) }
+    },
+    ...BASE_THEMES
+};
 const glass = require('./glass-main');
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');

@@ -113,8 +113,9 @@ html[data-ui="modern"] {
     --radius-lg: 30px;
     --stroke: rgba(255, 255, 255, 0.085);
     --stroke-strong: rgba(255, 255, 255, 0.17);
-    --m-surface: #0b0b0f;
-    --m-dock: #15151b;
+    --m-surface: #0b0b0f;                 /* ui.js overrides these from the active theme */
+    --m-on-surface: #f2f3f5;
+    --m-dock: color-mix(in srgb, var(--m-surface) 90%, #ffffff);
     --m-glow: color-mix(in srgb, var(--accent) 55%, transparent);
     --m-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -126,8 +127,14 @@ html[data-ui="modern"] body {
     padding-right: 1.25rem;
 }
 
-/* ---------- Ambient backdrop: the selected game's art, blurred ---------- */
-html[data-ui="modern"] .ambient-layer {
+/* ---------- "Dynamic" theme: accent follows the selected game's artwork (ui.js sets --dyn-*) ---------- */
+html[data-theme="dynamic"] {
+    --accent: var(--dyn-accent, #fc9677) !important;
+    --accent-contrast: var(--dyn-contrast, #1a1517) !important;
+}
+
+/* ---------- Ambient backdrop: the selected game's art, blurred. Only in the Dynamic theme. ---------- */
+html[data-theme="dynamic"] .ambient-layer {
     display: block;
     position: fixed;
     inset: -10%;
@@ -139,7 +146,7 @@ html[data-ui="modern"] .ambient-layer {
     transition: opacity 1s var(--m-ease);
     /* No app-region here: a full-window "no-drag" layer would make the window impossible to move. */
 }
-html[data-ui="modern"] .ambient-layer.on { opacity: 0.5; }
+html[data-theme="dynamic"] .ambient-layer.on { opacity: 0.5; }
 
 /* ---------- Header: floating command bar ---------- */
 html[data-ui="modern"] .header {
@@ -150,22 +157,73 @@ html[data-ui="modern"] .header {
     background: rgba(255, 255, 255, 0.06);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
-html[data-ui="modern"] .header::before {
-    content: "HB";
-    flex: none;
-    width: 40px;
-    height: 40px;
+/* Launcher logo button (ui.js inserts it). Default is a neutral glyph; the user can set their own image. */
+.brand-btn { display: none; }
+html[data-ui="modern"] .brand-btn {
+    --ico-gamepad: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' x2='10' y1='12' y2='12'/%3E%3Cline x1='8' x2='8' y1='10' y2='14'/%3E%3Cline x1='15' x2='15.01' y1='13' y2='13'/%3E%3Cline x1='18' x2='18.01' y1='11' y2='11'/%3E%3Crect x='2' y='6' width='20' height='12' rx='4'/%3E%3C/svg%3E");
+    position: relative;
     display: grid;
     place-items: center;
-    border-radius: 13px;
-    font-size: 0.88rem;
-    font-weight: 850;
-    letter-spacing: -0.02em;
+    flex: none;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid var(--stroke-strong);
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
     color: var(--accent-contrast);
     background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ffffff));
-    box-shadow: 0 6px 20px var(--m-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-    -webkit-app-region: drag;
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    transition: transform 0.2s var(--m-ease), box-shadow 0.2s var(--m-ease);
+    -webkit-app-region: no-drag;
 }
+html[data-ui="modern"] .brand-btn::after {
+    content: "";
+    width: 24px;
+    height: 24px;
+    background: currentColor;
+    -webkit-mask: var(--ico-gamepad) center / contain no-repeat;
+    mask: var(--ico-gamepad) center / contain no-repeat;
+}
+html[data-ui="modern"] .brand-btn.has-image {
+    background: var(--brand-image) center / cover no-repeat;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+html[data-ui="modern"] .brand-btn.has-image::after { display: none; }
+html[data-ui="modern"] .brand-btn:hover { transform: translateY(-1px) scale(1.05); }
+html[data-ui="modern"] .brand-btn:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* Settings -> Look: launcher logo row */
+.brand-setting {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    background: var(--card-bg);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-md);
+}
+.brand-preview {
+    flex: none;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    border: 1px solid var(--stroke-strong);
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ffffff));
+}
+.brand-preview.has-image { background: var(--brand-image) center / cover no-repeat; }
+.brand-setting-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.brand-setting-text span { color: var(--muted); font-size: 0.78rem; }
+.brand-setting .menu-btn { padding: 9px 16px; text-align: center; }
+.brand-setting .menu-btn:disabled { opacity: 0.4; pointer-events: none; }
+html[data-ui="classic"] #brandSection { display: none; }
+
+/* Panels follow the theme colour smoothly when you switch games in the Dynamic theme */
+html[data-ui="modern"] #detail-panel,
+html[data-ui="modern"] .dp-screenshots,
+html[data-ui="modern"] .dp-related,
+html[data-ui="modern"] .dp-action-row { transition: background-color 0.5s ease; }
 html[data-ui="modern"] .header .controls { flex: 1; width: auto; min-width: 0; }
 html[data-ui="modern"] .header .controls #librarySearch,
 html[data-ui="modern"] .header .controls .sort-control select,
@@ -242,7 +300,7 @@ html[data-ui="modern"] .dp-hero {
 }
 html[data-ui="modern"] .dp-hero::after {
     background:
-        linear-gradient(to top, var(--m-surface) 0%, rgba(11, 11, 15, 0.6) 28%, transparent 68%),
+        linear-gradient(to top, var(--m-surface) 0%, color-mix(in srgb, var(--m-surface) 60%, transparent) 28%, transparent 68%),
         linear-gradient(to right, rgba(10, 10, 13, 0.4), transparent 55%);
 }
 html[data-ui="modern"] .dp-title {
@@ -350,7 +408,7 @@ html[data-ui="modern"] body.glass-liquid #detail-panel { border-radius: 32px; }
 html[data-ui="modern"] .modal { background: rgba(4, 4, 7, 0.55); }
 html[data-ui="modern"] .modal-content {
     border-radius: 30px;
-    background: rgba(18, 18, 23, 0.84);
+    background: color-mix(in srgb, color-mix(in srgb, var(--m-surface) 94%, var(--accent)) 94%, transparent);
     border-color: var(--stroke-strong);
 }
 html[data-ui="modern"] #settingsModal .settings-modal-content { border-radius: 30px; }

@@ -273,17 +273,7 @@
             border-color: color-mix(in srgb, var(--accent) 55%, transparent) !important; 
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
         }
-        .content-wrapper.list-mode .game-card.list-selected::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 12px;
-            bottom: 12px;
-            width: 3px;
-            border-radius: 0 3px 3px 0;
-            background: var(--accent);
-            box-shadow: 0 0 12px var(--accent);
-        }
+        /* The selected row is shown by its highlight; there is no side bar. */
         .content-wrapper.list-mode .info-overlay, .content-wrapper.list-mode .fallback-title { display: none !important; }
         
         .list-thumb { 

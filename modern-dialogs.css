@@ -13,6 +13,13 @@ html[data-ui="modern"] {
     --ico-link: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
     --ico-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 6 5 6 21 6'/%3E%3Cpath d='M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3Cpath d='M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2'/%3E%3C/svg%3E");
 }
+html[data-ui="modern"] {
+    --ico-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
+    --ico-sliders: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='21' x2='4' y2='14'/%3E%3Cline x1='4' y1='10' x2='4' y2='3'/%3E%3Cline x1='12' y1='21' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12' y2='3'/%3E%3Cline x1='20' y1='21' x2='20' y2='16'/%3E%3Cline x1='20' y1='12' x2='20' y2='3'/%3E%3Cline x1='1' y1='14' x2='7' y2='14'/%3E%3Cline x1='9' y1='8' x2='15' y2='8'/%3E%3Cline x1='17' y1='16' x2='23' y2='16'/%3E%3C/svg%3E");
+}
+html[data-ui="modern"] [data-action="brand-change"]       { --ctx-icon: var(--ico-image); }
+html[data-ui="modern"] [data-action="brand-reset"]        { --ctx-icon: var(--ico-reset); }
+html[data-ui="modern"] [data-action="brand-settings"]     { --ctx-icon: var(--ico-sliders); }
 html[data-ui="modern"] [data-action="play"]               { --ctx-icon: var(--ico-play); }
 html[data-ui="modern"] [data-action="toggle-fav"]         { --ctx-icon: var(--ico-star); }
 html[data-ui="modern"] [data-action="rename"]             { --ctx-icon: var(--ico-pen); }
@@ -44,10 +51,14 @@ html[data-ui="modern"] .ctx-menu {
     max-width: 310px;
     padding: 6px;
     border-radius: 22px;
-    color: #f2f3f5;
-    background: rgba(22, 22, 28, 0.97);
-    border: 1px solid var(--stroke-strong);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    /* Follows the active theme: panel colour from --m-surface, tinted by the accent */
+    color: var(--m-on-surface, #f2f3f5);
+    background: color-mix(in srgb, var(--m-surface) 93%, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--stroke-strong));
+    box-shadow:
+        0 14px 34px rgba(0, 0, 0, 0.45),
+        0 0 36px color-mix(in srgb, var(--accent) 14%, transparent),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
     transform-origin: var(--ox, 0) 0;
     animation: ctx-in 0.16s var(--m-ease);
     -webkit-app-region: no-drag;
@@ -63,7 +74,9 @@ html[data-ui="modern"] .ctx-head {
     gap: 12px;
     padding: 10px 10px 12px;
     margin-bottom: 4px;
-    border-bottom: 1px solid var(--stroke);
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--m-on-surface, #ffffff) 12%, transparent);
 }
 html[data-ui="modern"] .ctx-thumb {
     flex: none;
@@ -82,7 +95,7 @@ html[data-ui="modern"] .ctx-title {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-html[data-ui="modern"] .ctx-sub { font-size: 0.76rem; color: rgba(242, 243, 245, 0.55); }
+html[data-ui="modern"] .ctx-sub { font-size: 0.76rem; color: color-mix(in srgb, var(--m-on-surface, #f2f3f5) 58%, transparent); }
 
 html[data-ui="modern"] .ctx-item {
     display: flex;
@@ -102,7 +115,7 @@ html[data-ui="modern"] .ctx-item {
     transition: background 0.15s ease, color 0.15s ease;
 }
 html[data-ui="modern"] .ctx-item:hover,
-html[data-ui="modern"] .ctx-item:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
+html[data-ui="modern"] .ctx-item:focus-visible { background: color-mix(in srgb, var(--accent) 20%, transparent); outline: none; }
 
 html[data-ui="modern"] .ctx-item.primary {
     margin: 2px 0;
@@ -119,7 +132,7 @@ html[data-ui="modern"] .ctx-item.danger:hover,
 html[data-ui="modern"] .ctx-item.danger:focus-visible { background: rgba(255, 80, 80, 0.15); }
 html[data-ui="modern"] .ctx-item.danger.confirm { background: #e5484d; color: #ffffff; }
 
-html[data-ui="modern"] .ctx-sep { height: 1px; margin: 6px 10px; background: var(--stroke); }
+html[data-ui="modern"] .ctx-sep { height: 1px; margin: 6px 10px; background: color-mix(in srgb, var(--m-on-surface, #ffffff) 12%, transparent); }
 
 /* The game the menu belongs to */
 html[data-ui="modern"] .game-card.ctx-target {
@@ -158,7 +171,7 @@ html[data-ui="modern"] #contextOptionsList .menu-btn {
     border-radius: 14px;
     font-weight: 600;
 }
-html[data-ui="modern"] #contextOptionsList .menu-btn:hover { background: rgba(255, 255, 255, 0.09); border-color: transparent; }
+html[data-ui="modern"] #contextOptionsList .menu-btn:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); border-color: transparent; }
 html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="rename"],
 html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="open-file-location"],
 html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="remove"] { margin-top: 8px; }
