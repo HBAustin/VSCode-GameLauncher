@@ -116,6 +116,137 @@
         refresh();
     }
 
+    // ---- Right-click menu (Modern): in-app popover instead of the native OS menu ------
+    // It replays the same events the native menu sends, so renderer.js handles the actions as before.
+    let ipc = null;
+    try { ipc = require('electron').ipcRenderer; } catch (_) { /* no Node access: keep the native menu */ }
+
+    const CTX_CHANNELS = {
+        play: 'context-menu-play',
+        'toggle-fav': 'context-menu-fav',
+        rename: 'context-menu-rename',
+        'open-customize': 'context-menu-customize',
+        'open-file-location': 'context-menu-open-location',
+        'change-path': 'context-menu-change-path',
+        remove: 'context-menu-remove',
+    };
+    let ctx = null; // { el, card, abort }
+
+    function closeCtx() {
+        if (!ctx) return;
+        ctx.abort.abort();
+        ctx.el.remove();
+        if (ctx.card) ctx.card.classList.remove('ctx-target');
+        ctx = null;
+    }
+
+    function openCtx(id, x, y, card) {
+        if (typeof gameData === 'undefined' || !gameData[id]) return false;
+        closeCtx();
+        const game = gameData[id];
+
+        const el = document.createElement('div');
+        el.className = 'ctx-menu';
+        el.setAttribute('role', 'menu');
+        el.innerHTML = `
+            <div class="ctx-head">
+                <span class="ctx-thumb"></span>
+                <span class="ctx-meta"><span class="ctx-title"></span><span class="ctx-sub"></span></span>
+            </div>
+            <button type="button" class="ctx-item primary" role="menuitem" data-action="play">Play</button>
+            <div class="ctx-sep"></div>
+            <button type="button" class="ctx-item" role="menuitem" data-action="toggle-fav"></button>
+            <button type="button" class="ctx-item" role="menuitem" data-action="rename">Rename</button>
+            <button type="button" class="ctx-item" role="menuitem" data-action="open-customize">Customize artwork</button>
+            <div class="ctx-sep"></div>
+            <button type="button" class="ctx-item" role="menuitem" data-action="open-file-location">Open file location</button>
+            <button type="button" class="ctx-item" role="menuitem" data-action="change-path">Change game path</button>
+            <div class="ctx-sep"></div>
+            <button type="button" class="ctx-item danger" role="menuitem" data-action="remove">Remove from library</button>`;
+
+        el.querySelector('.ctx-title').textContent = game.name || '';
+        const played = typeof formatLastPlayed === 'function' ? formatLastPlayed(game.lastPlayed) : '';
+        el.querySelector('.ctx-sub').textContent = game.lastPlayed ? `Last played \u00b7 ${played}` : played;
+        if (game.icon) {
+            el.querySelector('.ctx-thumb').style.backgroundImage =
+                `url("local-image://asset?path=${encodeURIComponent(game.icon)}")`;
+        }
+        el.querySelector('[data-action="toggle-fav"]').textContent =
+            game.favorite ? 'Remove from favorites' : 'Add to favorites';
+
+        document.body.appendChild(el);
+
+        // Keep it on screen
+        const pad = 10;
+        const rect = el.getBoundingClientRect();
+        const flipX = x + rect.width > window.innerWidth - pad;
+        el.style.left = (flipX ? Math.max(pad, x - rect.width) : x) + 'px';
+        el.style.top = Math.max(pad, Math.min(y, window.innerHeight - rect.height - pad)) + 'px';
+        el.style.setProperty('--ox', flipX ? '100%' : '0');
+
+        const abort = new AbortController();
+        const { signal } = abort;
+        ctx = { el, card, abort };
+        if (card) card.classList.add('ctx-target');
+
+        el.addEventListener('click', (e) => {
+            const btn = e.target.closest('.ctx-item');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            if (action === 'remove' && !btn.classList.contains('confirm')) {
+                btn.classList.add('confirm');           // destructive: ask for a second click
+                btn.textContent = 'Click again to remove';
+                return;
+            }
+            closeCtx();
+            if (ipc && CTX_CHANNELS[action]) ipc.emit(CTX_CHANNELS[action], {}, { id, ...game });
+        }, { signal });
+
+        window.addEventListener('mousedown', (e) => { if (!el.contains(e.target)) closeCtx(); }, { capture: true, signal });
+        window.addEventListener('wheel', (e) => { if (!el.contains(e.target)) closeCtx(); }, { capture: true, passive: true, signal });
+        window.addEventListener('blur', closeCtx, { signal });
+        window.addEventListener('resize', closeCtx, { signal });
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation(); // don't also exit full screen
+                closeCtx();
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const items = [...el.querySelectorAll('.ctx-item')];
+                const i = items.indexOf(document.activeElement);
+                const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+                items[next].focus();
+            }
+        }, { capture: true, signal });
+        return true;
+    }
+
+    // Capture phase on window: runs before renderer.js's own contextmenu handler.
+    window.addEventListener('contextmenu', (e) => {
+        if (currentStyle() !== 'modern' || !ipc) return; // Classic keeps the native menu
+        const card = e.target.closest ? e.target.closest('.game-card') : null;
+        if (!card) { closeCtx(); return; }
+        if (!openCtx(card.id, e.clientX, e.clientY, card)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }, true);
+
+    // ---- Artwork customiser: show which game is being edited -----------------------
+    const customizeModal = document.getElementById('customizeModal');
+    if (customizeModal) {
+        const title = customizeModal.querySelector('h2');
+        const sub = document.createElement('p');
+        sub.className = 'cz-sub';
+        if (title) title.after(sub);
+        new MutationObserver(() => {
+            if (!customizeModal.style.display || customizeModal.style.display === 'none') return;
+            const game = typeof gameData !== 'undefined' && typeof currentEditingId !== 'undefined'
+                ? gameData[currentEditingId] : null;
+            sub.textContent = game ? game.name : '';
+        }).observe(customizeModal, { attributes: true, attributeFilter: ['style'] });
+    }
+
     root.dataset.ui = readStyle();
     syncPlaceholder();
     buildSwitch();

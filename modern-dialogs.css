@@ -1,0 +1,331 @@
+/* ==========================================================================
+   HB Launcher: Modern context menu + artwork customiser
+   Scoped to html[data-ui="modern"]. Classic keeps its existing look.
+   ========================================================================== */
+
+/* ---------- Icons (shared by the right-click menu and the controller menu) ---------- */
+html[data-ui="modern"] {
+    --ico-play: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='7 4 20 12 7 20' fill='black'/%3E%3C/svg%3E");
+    --ico-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E");
+    --ico-pen: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E");
+    --ico-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpolyline points='21 15 16 10 5 21'/%3E%3C/svg%3E");
+    --ico-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+    --ico-link: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+    --ico-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 6 5 6 21 6'/%3E%3Cpath d='M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3Cpath d='M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2'/%3E%3C/svg%3E");
+}
+html[data-ui="modern"] [data-action="play"]               { --ctx-icon: var(--ico-play); }
+html[data-ui="modern"] [data-action="toggle-fav"]         { --ctx-icon: var(--ico-star); }
+html[data-ui="modern"] [data-action="rename"]             { --ctx-icon: var(--ico-pen); }
+html[data-ui="modern"] [data-action="open-customize"]     { --ctx-icon: var(--ico-image); }
+html[data-ui="modern"] [data-action="open-file-location"] { --ctx-icon: var(--ico-folder); }
+html[data-ui="modern"] [data-action="change-path"]        { --ctx-icon: var(--ico-link); }
+html[data-ui="modern"] [data-action="remove"]             { --ctx-icon: var(--ico-trash); }
+
+html[data-ui="modern"] .ctx-item::before,
+html[data-ui="modern"] #contextOptionsList .menu-btn::before {
+    content: "";
+    flex: none;
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    opacity: 0.85;
+    -webkit-mask: var(--ctx-icon) center / contain no-repeat;
+    mask: var(--ctx-icon) center / contain no-repeat;
+}
+
+
+/* ==========================================================================
+   RIGHT-CLICK MENU (in-app popover, built by ui.js)
+   ========================================================================== */
+html[data-ui="modern"] .ctx-menu {
+    position: fixed;
+    z-index: 3000;
+    min-width: 250px;
+    max-width: 310px;
+    padding: 6px;
+    border-radius: 22px;
+    color: #f2f3f5;
+    background: rgba(22, 22, 28, 0.97);
+    border: 1px solid var(--stroke-strong);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform-origin: var(--ox, 0) 0;
+    animation: ctx-in 0.16s var(--m-ease);
+    -webkit-app-region: no-drag;
+}
+@keyframes ctx-in {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+}
+
+html[data-ui="modern"] .ctx-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 10px 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--stroke);
+}
+html[data-ui="modern"] .ctx-thumb {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06) center / cover no-repeat;
+    border: 1px solid var(--stroke);
+}
+html[data-ui="modern"] .ctx-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+html[data-ui="modern"] .ctx-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+html[data-ui="modern"] .ctx-sub { font-size: 0.76rem; color: rgba(242, 243, 245, 0.55); }
+
+html[data-ui="modern"] .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+html[data-ui="modern"] .ctx-item:hover,
+html[data-ui="modern"] .ctx-item:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
+
+html[data-ui="modern"] .ctx-item.primary {
+    margin: 2px 0;
+    color: var(--accent-contrast);
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffffff));
+    box-shadow: 0 6px 18px var(--m-glow);
+    font-weight: 750;
+}
+html[data-ui="modern"] .ctx-item.primary:hover,
+html[data-ui="modern"] .ctx-item.primary:focus-visible { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffffff)); }
+
+html[data-ui="modern"] .ctx-item.danger { color: #ff7a7a; }
+html[data-ui="modern"] .ctx-item.danger:hover,
+html[data-ui="modern"] .ctx-item.danger:focus-visible { background: rgba(255, 80, 80, 0.15); }
+html[data-ui="modern"] .ctx-item.danger.confirm { background: #e5484d; color: #ffffff; }
+
+html[data-ui="modern"] .ctx-sep { height: 1px; margin: 6px 10px; background: var(--stroke); }
+
+/* The game the menu belongs to */
+html[data-ui="modern"] .game-card.ctx-target {
+    outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+    outline-offset: 2px;
+}
+
+
+/* ==========================================================================
+   CONTROLLER MENU (the centred #contextModal opened with the gamepad X button)
+   ========================================================================== */
+html[data-ui="modern"] #contextModal .modal-content {
+    max-width: 380px;
+    padding: 10px;
+    text-align: left;
+    border-radius: 28px;
+}
+html[data-ui="modern"] #contextGameName {
+    margin: 0;
+    padding: 14px 14px 10px;
+    color: var(--text) !important;
+    font-size: 1.05rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    border-bottom: 1px solid var(--stroke);
+}
+html[data-ui="modern"] #contextOptionsList { margin-top: 6px; gap: 2px; }
+html[data-ui="modern"] #contextOptionsList .menu-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 14px;
+    font-weight: 600;
+}
+html[data-ui="modern"] #contextOptionsList .menu-btn:hover { background: rgba(255, 255, 255, 0.09); border-color: transparent; }
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="rename"],
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="open-file-location"],
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="remove"] { margin-top: 8px; }
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="rename"]::after,
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="open-file-location"]::after,
+html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="remove"]::after {
+    content: "";
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: -5px;
+    height: 1px;
+    background: var(--stroke);
+}
+
+
+/* ==========================================================================
+   ARTWORK CUSTOMISER
+   ========================================================================== */
+html[data-ui="modern"] #customizeModal .artwork-modal-content {
+    width: min(1080px, 94vw);
+    max-width: 1080px;
+    max-height: 90vh;
+    padding: 28px 30px 24px;
+    border-radius: 30px;
+    text-align: left;
+    overflow-y: auto;
+}
+html[data-ui="modern"] #customizeModal h2 {
+    margin: 0;
+    color: var(--text) !important;
+    font-size: 1.65rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+.cz-sub { display: none; }
+html[data-ui="modern"] .cz-sub {
+    display: block;
+    margin: 4px 0 22px;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+/* Card grid: Cover + Background on top, Logo + Icon below */
+html[data-ui="modern"] #customizeOptionsList {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-flow: dense;
+    gap: 16px;
+}
+html[data-ui="modern"] .artwork-row {
+    grid-column: span 6;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin-top: 0;
+    padding: 16px;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--stroke);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+html[data-ui="modern"] .artwork-row:hover { border-color: var(--stroke-strong); background: rgba(255, 255, 255, 0.055); }
+html[data-ui="modern"] .artwork-row[data-artwork-type="cover"]      { grid-column: span 4; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="background"] { grid-column: span 8; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="logo"]       { grid-column: span 8; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="icon"]       { grid-column: span 4; }
+
+html[data-ui="modern"] .artwork-row h3 { margin: 0 0 4px; font-size: 1.02rem; font-weight: 700; letter-spacing: -0.015em; }
+html[data-ui="modern"] .artwork-row p { margin: 0; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+
+/* Previews */
+html[data-ui="modern"] .artwork-preview {
+    width: 100%;
+    height: 200px;
+    border-radius: 16px;
+    border: 1px solid var(--stroke);
+    background: rgba(0, 0, 0, 0.35) center / cover no-repeat;
+}
+html[data-ui="modern"] .artwork-row[data-artwork-type="cover"] .artwork-preview {
+    width: auto;
+    height: 250px;
+    aspect-ratio: 2 / 3;
+    align-self: center;
+    background-size: cover;
+}
+html[data-ui="modern"] .artwork-row[data-artwork-type="icon"] .artwork-preview {
+    width: 124px;
+    height: 124px;
+    align-self: center;
+    border-radius: 30px;
+    background-size: contain;
+}
+/* The logo card shows the live composite instead, so the loose logo thumbnail is redundant */
+html[data-ui="modern"] .logo-artwork-row > .artwork-preview { display: none; }
+
+/* Change / Reset */
+html[data-ui="modern"] .artwork-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    min-width: 0;
+    margin-top: auto;
+}
+html[data-ui="modern"] .artwork-actions .menu-btn { padding: 11px 12px; text-align: center; font-size: 0.86rem; }
+html[data-ui="modern"] .artwork-actions .menu-btn:first-child {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+html[data-ui="modern"] .artwork-actions .menu-btn:first-child:hover { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+
+/* Logo card: live preview with the controls laid out beneath it */
+html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 18px;
+    row-gap: 6px;
+    align-items: center;
+}
+html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > h3,
+html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > p,
+html[data-ui="modern"] #logoLivePreview { grid-column: 1 / -1; }
+html[data-ui="modern"] #logoLivePreview { margin-top: 8px; border-radius: 18px; }
+html[data-ui="modern"] .logo-preview-hint { margin: 6px 0 12px !important; }
+
+html[data-ui="modern"] label[for="gameLogoScale"],
+html[data-ui="modern"] label[for="gameLogoPosition"] {
+    margin-top: 0 !important;
+    color: var(--muted) !important;
+    font-size: 0.78rem !important;
+    font-weight: 650;
+}
+html[data-ui="modern"] label[for="gameLogoScale"]    { grid-column: 1; grid-row: 5; }
+html[data-ui="modern"] #gameLogoScale                { grid-column: 1; grid-row: 6; width: 100%; accent-color: var(--accent); }
+html[data-ui="modern"] label[for="gameLogoPosition"] { grid-column: 2; grid-row: 5; }
+html[data-ui="modern"] #gameLogoPosition {
+    grid-column: 2;
+    grid-row: 6;
+    margin-top: 0 !important;
+    padding: 10px 12px !important;
+    color: var(--text) !important;
+    background: rgba(0, 0, 0, 0.35) !important;
+    border: 1px solid var(--stroke) !important;
+    border-radius: 12px !important;
+}
+html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > label:not([for]) {
+    grid-column: 1 / -1;
+    grid-row: 7;
+    margin-top: 12px !important;
+    color: var(--text) !important;
+    font-size: 0.86rem !important;
+    font-weight: 600;
+    cursor: pointer;
+}
+html[data-ui="modern"] #gameLogoSnapToGrid { accent-color: var(--accent); width: 18px; height: 18px; }
+
+/* Close */
+html[data-ui="modern"] #customizeOptionsList > .menu-btn[data-action="cancel"] {
+    grid-column: 1 / -1;
+    justify-self: end;
+    min-width: 150px;
+    margin-top: 4px !important;
+    border-radius: 999px;
+}
+
+@media (max-width: 900px) {
+    html[data-ui="modern"] .artwork-row,
+    html[data-ui="modern"] .artwork-row[data-artwork-type] { grid-column: 1 / -1; }
+}
