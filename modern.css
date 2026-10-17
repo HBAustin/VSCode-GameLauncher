@@ -1,0 +1,354 @@
+/* ==========================================================================
+   HB Launcher: "Modern" interface
+   --------------------------------------------------------------------------
+   Everything that changes the look is scoped to html[data-ui="modern"].
+   "Classic" is the stylesheet already inside index.html (no data-ui override).
+   Same DOM, same IDs and classes, so renderer.js needs no changes.
+   ========================================================================== */
+
+
+/* ==========================================================================
+   SHARED (both styles)
+   ========================================================================== */
+
+/* Controller / gamepad focus. renderer.js toggles these classes. */
+.game-card.focused {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent), 0 24px 56px rgba(0, 0, 0, 0.5);
+    z-index: 5;
+}
+.menu-btn.focused,
+.dash-btn.focused,
+#dpPlayBtn.focused,
+#renameInput.focused {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+[data-header-idx].header-focused {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent) !important;
+}
+.artwork-row.controller-focused {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.settings-focused { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
+
+/* Ambient backdrop layers (created by ui.js, only visible in Modern) */
+.ambient-layer { display: none; }
+
+/* Interface style switch (injected into Settings -> Look by ui.js) */
+.ui-style-switch {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--stroke);
+    border-radius: 14px;
+}
+.ui-style-switch label { position: relative; flex: 1; cursor: pointer; }
+.ui-style-switch input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.ui-style-switch span {
+    display: block;
+    padding: 11px 14px;
+    border-radius: 10px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text);
+    transition: background 0.25s ease, color 0.25s ease;
+}
+.ui-style-switch label:hover input:not(:checked) + span { background: var(--card-bg-hover); }
+.ui-style-switch input:checked + span {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.ui-style-switch input.settings-focused + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+
+/* ==========================================================================
+   MODERN
+   ========================================================================== */
+
+html[data-ui="modern"] {
+    --sidebar-width: 330px;
+    --radius-sm: 14px;
+    --radius-md: 20px;
+    --radius-lg: 30px;
+    --stroke: rgba(255, 255, 255, 0.085);
+    --stroke-strong: rgba(255, 255, 255, 0.17);
+    --m-ink: rgba(10, 10, 13, 0.88);
+    --m-dock: rgba(16, 16, 21, 0.68);
+    --m-glow: color-mix(in srgb, var(--accent) 55%, transparent);
+    --m-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-ui="modern"] body {
+    font-family: "Segoe UI Variable Display", "SF Pro Display", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    letter-spacing: -0.011em;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+}
+
+/* ---------- Ambient backdrop: the selected game's art, blurred ---------- */
+html[data-ui="modern"] .ambient-layer {
+    display: block;
+    position: fixed;
+    inset: -10%;
+    z-index: -1;
+    pointer-events: none;
+    background: center / cover no-repeat;
+    filter: blur(80px) saturate(1.6) brightness(0.8);
+    opacity: 0;
+    transition: opacity 1s var(--m-ease);
+    -webkit-app-region: no-drag;
+}
+html[data-ui="modern"] .ambient-layer.on { opacity: 0.5; }
+
+/* ---------- Header: floating command bar ---------- */
+html[data-ui="modern"] .header {
+    padding: 8px 8px 8px 10px;
+    gap: 12px;
+    margin-bottom: 16px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+html[data-ui="modern"] .header::before {
+    content: "HB";
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    font-size: 0.88rem;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    color: var(--accent-contrast);
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ffffff));
+    box-shadow: 0 6px 20px var(--m-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    -webkit-app-region: drag;
+}
+html[data-ui="modern"] .header .controls { flex: 1; width: auto; min-width: 0; }
+html[data-ui="modern"] .header .controls #librarySearch,
+html[data-ui="modern"] .header .controls .sort-control select,
+html[data-ui="modern"] .header .controls .control-btn { height: 42px; border-radius: 14px; }
+html[data-ui="modern"] .header .controls #librarySearch { background-color: rgba(0, 0, 0, 0.3); }
+html[data-ui="modern"] .header .controls .control-btn { background: rgba(255, 255, 255, 0.07); }
+html[data-ui="modern"] .header .controls .control-btn:hover { background: rgba(255, 255, 255, 0.15); }
+html[data-ui="modern"] .header .controls #settingsBtn {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffffff));
+    box-shadow: 0 8px 24px var(--m-glow);
+}
+
+/* ---------- Layout ---------- */
+html[data-ui="modern"] .content-wrapper { gap: 18px; }
+
+/* ---------- Library: glass rail ---------- */
+html[data-ui="modern"] .content-wrapper.list-mode #library {
+    padding: 8px;
+    gap: 6px;
+    border-radius: 26px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--stroke);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 20px 60px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: blur(26px) saturate(1.3);
+    backdrop-filter: blur(26px) saturate(1.3);
+}
+html[data-ui="modern"] .content-wrapper.list-mode #library::before {
+    content: attr(data-label);
+    position: sticky;
+    top: -8px;
+    z-index: 3;
+    padding: 14px 14px 10px;
+    margin: -8px -8px 2px;
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: linear-gradient(to bottom, rgba(14, 14, 18, 0.85) 60%, transparent);
+    border-radius: 26px 26px 0 0;
+}
+html[data-ui="modern"] .content-wrapper.list-mode .game-card {
+    height: 60px;
+    padding: 9px 12px;
+    gap: 14px;
+    border-radius: 18px;
+}
+html[data-ui="modern"] .content-wrapper.list-mode .game-card:hover { transform: translateX(3px); }
+html[data-ui="modern"] .content-wrapper.list-mode .game-card.list-selected {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 24%, transparent), rgba(255, 255, 255, 0.05)) !important;
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+html[data-ui="modern"] .list-thumb { width: 40px; height: 40px; border-radius: 12px; }
+html[data-ui="modern"] .list-title { font-size: 0.94rem; font-weight: 650; letter-spacing: -0.015em; }
+
+/* ---------- Detail panel: cinematic, content slides over a pinned hero ---------- */
+html[data-ui="modern"] #detail-panel {
+    border-radius: 30px;
+    background: rgba(8, 8, 11, 0.4);
+    border-color: var(--stroke);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+html[data-ui="modern"] #dp-content-state { scroll-behavior: smooth; }
+
+html[data-ui="modern"] .dp-hero {
+    position: sticky;
+    top: 0;
+    z-index: 0;
+    height: min(56vh, 540px) !important;
+    min-height: 340px !important;
+    max-height: none !important;
+    padding: 2.5rem 3rem 6.5rem;
+    background-position: center 25%;
+}
+html[data-ui="modern"] .dp-hero::after {
+    background:
+        linear-gradient(to top, rgba(10, 10, 13, 0.97) 0%, rgba(10, 10, 13, 0.6) 28%, transparent 68%),
+        linear-gradient(to right, rgba(10, 10, 13, 0.4), transparent 55%);
+}
+html[data-ui="modern"] .dp-title {
+    font-size: clamp(2.4rem, 5vw, 4.2rem);
+    font-weight: 850;
+    letter-spacing: -0.045em;
+    line-height: 0.98;
+}
+
+/* Action dock floats over the hero's bottom edge */
+html[data-ui="modern"] .dp-action-row {
+    position: relative;
+    z-index: 3;
+    margin: -70px 32px 0;
+    min-height: 88px;
+    padding: 14px 20px;
+    gap: 28px;
+    border: 1px solid var(--stroke-strong);
+    border-radius: 26px;
+    background: var(--m-dock);
+    -webkit-backdrop-filter: blur(30px) saturate(1.5);
+    backdrop-filter: blur(30px) saturate(1.5);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+html[data-ui="modern"] .dp-play-btn {
+    min-width: 200px;
+    min-height: 56px;
+    padding: 0 38px;
+    border-radius: 18px;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+    box-shadow:
+        0 14px 40px color-mix(in srgb, var(--play-color, var(--accent)) 50%, transparent),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+}
+html[data-ui="modern"] .dp-play-btn:hover { transform: translateY(-3px) scale(1.02); }
+html[data-ui="modern"] .dp-last-played { padding-left: 26px; border-left: 1px solid var(--stroke); }
+html[data-ui="modern"] .dp-last-played-value { font-size: 1rem; font-weight: 650; }
+html[data-ui="modern"] .dp-management-actions .dash-btn {
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+/* Sections scroll up over the pinned hero */
+html[data-ui="modern"] .dp-screenshots,
+html[data-ui="modern"] .dp-related {
+    position: relative;
+    z-index: 2;
+    background: var(--m-ink);
+    -webkit-backdrop-filter: blur(30px);
+    backdrop-filter: blur(30px);
+}
+html[data-ui="modern"] .dp-screenshots { padding: 34px 32px 14px; border-bottom: 0; gap: 14px; }
+html[data-ui="modern"] .dp-related { padding: 18px 32px 56px; gap: 14px; min-height: 40vh; }
+html[data-ui="modern"] .dp-media-heading h2,
+html[data-ui="modern"] .dp-related h2 {
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+html[data-ui="modern"] .dp-screenshot-grid { gap: 16px; padding: 4px 2px 16px; scroll-snap-type: x proximity; }
+html[data-ui="modern"] .dp-screenshot {
+    flex: 0 0 clamp(280px, 38vw, 460px);
+    border-radius: 20px;
+    scroll-snap-align: start;
+}
+html[data-ui="modern"] .related-games-grid { grid-auto-columns: 164px; grid-template-rows: 218px; gap: 16px; }
+html[data-ui="modern"] .related-game-card { border-radius: 20px; }
+html[data-ui="modern"] .related-game-name { background: rgba(0, 0, 0, 0.45); }
+
+/* Empty state */
+html[data-ui="modern"] .dp-empty { flex-direction: column; gap: 18px; }
+html[data-ui="modern"] .dp-empty::before {
+    content: "";
+    width: 88px;
+    height: 88px;
+    border-radius: 30px;
+    border: 1px solid var(--stroke-strong);
+    background:
+        radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 70%),
+        rgba(255, 255, 255, 0.04);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- Full Screen: poster wall ---------- */
+html[data-ui="modern"] .content-wrapper.grid-mode #library { gap: 24px; padding: 12px; }
+html[data-ui="modern"] .content-wrapper.grid-mode .game-card { border-radius: 22px; }
+html[data-ui="modern"] .content-wrapper.grid-mode .game-card:hover {
+    transform: translateY(-8px) scale(1.035);
+    border-color: var(--accent);
+    box-shadow: 0 34px 70px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--m-glow);
+}
+html[data-ui="modern"] .info-overlay { padding: 2rem 1rem 1rem; }
+
+/* ---------- Native glass: keep the frosted look in Modern ---------- */
+html[data-ui="modern"] body.native-glass .header,
+html[data-ui="modern"] body.native-glass #detail-panel {
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
+}
+html[data-ui="modern"] body.glass-liquid .header { border-radius: 24px; }
+html[data-ui="modern"] body.glass-liquid #detail-panel { border-radius: 32px; }
+
+/* ---------- Modals ---------- */
+html[data-ui="modern"] .modal { background: rgba(4, 4, 7, 0.55); }
+html[data-ui="modern"] .modal-content {
+    border-radius: 30px;
+    background: rgba(18, 18, 23, 0.84);
+    border-color: var(--stroke-strong);
+}
+html[data-ui="modern"] #settingsModal .settings-modal-content { border-radius: 30px; }
+html[data-ui="modern"] .menu-btn { border-radius: 14px; }
+html[data-ui="modern"] .artwork-row { border-radius: 22px; }
+html[data-ui="modern"] .settings-tab { border-radius: 14px; }
+
+/* ---------- Controller footer ---------- */
+html[data-ui="modern"] .footer { padding: 12px 30px; }
+
+/* ---------- Narrow windows ---------- */
+@media (max-width: 980px) {
+    html[data-ui="modern"] { --sidebar-width: 270px; }
+    html[data-ui="modern"] .dp-hero { padding: 2rem 1.75rem 6rem; }
+    html[data-ui="modern"] .dp-action-row { margin-left: 18px; margin-right: 18px; gap: 16px; }
+    html[data-ui="modern"] .dp-last-played { padding-left: 0; border-left: 0; }
+    html[data-ui="modern"] .dp-screenshots,
+    html[data-ui="modern"] .dp-related { padding-left: 20px; padding-right: 20px; }
+}

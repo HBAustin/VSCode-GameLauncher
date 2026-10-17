@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>HB Launcher</title>
+    <script>
+        /* Pick the interface style before first paint so there is no flash. */
+        try { document.documentElement.dataset.ui = localStorage.getItem('hb-ui') === 'classic' ? 'classic' : 'modern'; }
+        catch (e) { document.documentElement.dataset.ui = 'modern'; }
+    </script>
     <style>
         :root { 
             --accent: #fc9677; 
@@ -897,11 +902,26 @@
         body.glass-liquid #detail-panel { border-radius: 24px; }
         body.glass-liquid .game-card { border-radius: 16px; }
 
+        /* ===== Theme text colour =====
+           renderer.js sets --header-text; these rules apply it. This replaces the inline colours the script
+           used to write onto each element, which overrode accent-filled buttons (Settings, Save) with white. */
+        .header .controls #librarySearch,
+        .header .controls .sort-control select,
+        .header .controls .control-btn:not(#settingsBtn),
+        .game-card .info-overlay div,
+        .game-card .fallback-title,
+        .game-card .list-title,
+        .dp-title,
+        .menu-btn,
+        .modal-content { color: var(--header-text); }
+
         .glass-status { margin: 12px 0 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
         #glassSection.is-unsupported .settings-toggle,
         #glassSection.is-unsupported .settings-scale-control,
         #glassSection.is-unsupported #glassMaterial { opacity: 0.45; pointer-events: none; }
     </style>
+    <!-- Modern interface (scoped to html[data-ui="modern"]) + shared controller-focus styles -->
+    <link rel="stylesheet" href="modern.css">
 </head>
 <body>
     <div class="header" id="appHeader">
@@ -1125,5 +1145,7 @@
 
     <script src="renderer.js"></script>
     <script src="glass.js"></script>
+    <script src="contrast.js"></script>
+    <script src="ui.js"></script>
 </body>
 </html>

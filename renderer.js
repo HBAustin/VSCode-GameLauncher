@@ -129,10 +129,8 @@ async function loadSettings() {
     }
 }
 
-function getAccentTextColor(accentHex) {
-    try {
-        return luminance(hexToRgb(accentHex)) > 0.179 ? '#111111' : '#ffffff';
-    } catch (e) { return '#ffffff'; }
+function getAccentTextColor(accentCss) {
+    return getLuminance(parseColor(accentCss)) > 0.179 ? '#111111' : '#ffffff';
 }
 
 const applySettings = (settings) => {
@@ -176,53 +174,52 @@ const applySettings = (settings) => {
         const headerColor = isPreset
             ? getAutoHeaderTextColor(surface || bg)
             : (colors.text || getComputedStyle(root).getPropertyValue('--text') || '#ffffff').trim();
+        // Text colours are applied by CSS from this variable (see the "Theme text colour" block in index.html),
+        // not as inline styles on every element. Buttons filled with the accent colour keep --accent-contrast.
         root.style.setProperty('--header-text', headerColor);
-
-        const headerEl = document.getElementById('appHeader');
-        if (headerEl) {
-            headerEl.style.color = headerColor;
-            const headerTitle = headerEl.querySelector('h1');
-            if (headerTitle) headerTitle.style.color = headerColor;
-            headerEl.querySelectorAll('input, select, button, .control-btn').forEach(element => {
-                element.style.color = headerColor;
-            });
-        }
-
-        const cardTextSelectors = [
-            '.game-card .info-overlay div', '.game-card .fallback-title', '.game-card .list-title',
-            '.game-card .fav-badge', '.dp-title', '.menu-btn', '.modal-content', '.menu-options', '.dash-btn:not(.play-themed-btn)'
-        ];
-        document.querySelectorAll(cardTextSelectors.join(', ')).forEach(element => {
-            element.style.color = headerColor;
-        });
-
         root.style.setProperty('--card-bg-hover', 'rgba(255,255,255,0.12)');
     } catch (e) { console.error('Error computing derived theme colors:', e); }
 };
 
-function hexToRgb(hex) {
-    hex = hex.replace('#','').trim();
-    if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
-    const num = parseInt(hex,16);
-    return { r: (num>>16)&255, g: (num>>8)&255, b: num&255 };
+// --- Colour helpers (accept hex, rgb(a), hsl and named colours) ---
+const colorCanvasContext = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    return canvas.getContext('2d', { willReadFrequently: true });
+})();
+
+// Resolve any CSS colour to {r,g,b}. Translucent colours are composited over the dark window base,
+// so rgba(255,255,255,0.05) reads as "dark surface" instead of "white".
+function parseColor(css, base = [18, 18, 20]) {
+    const ctx = colorCanvasContext;
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = `rgb(${base.join(',')})`;
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = String(css || '').trim(); // an invalid value is ignored, leaving the base colour
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return { r, g, b };
 }
 
-function luminance({r,g,b}) {
-    const srgb = [r,g,b].map(v=>{
-        v/=255;
-        return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+function getLuminance({ r, g, b }) {
+    const [lr, lg, lb] = [r, g, b].map((v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     });
-    return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
+    return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
 }
 
-function getAutoHeaderTextColor(bgHex) {
-    try {
-        const rgb = hexToRgb(bgHex);
-        const lum = luminance(rgb);
-        if (lum < 0.25) return '#ffffff';
-        if (lum < 0.7) return '#888888';
-        return '#000000';
-    } catch (e) { return '#ffffff'; }
+function getAutoHeaderTextColor(surfaceCss) {
+    const lum = getLuminance(parseColor(surfaceCss));
+    if (lum < 0.25) return '#ffffff';
+    if (lum < 0.7) return '#888888';
+    return '#000000';
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
 }
 
 let activeSettingsTab = 'appearance';
@@ -563,7 +560,7 @@ if (customScaleEl) {
     });
 }
 
-ipcRenderer.on('settings-updated', (settings) => {
+ipcRenderer.on('settings-updated', (event, settings) => {
     currentSettings = ensureSettingsDefaults(settings);
     applySettings(currentSettings);
     updateColorInputs();
@@ -691,11 +688,7 @@ function applyPlayButtonColor(image) {
         const red = Math.round(dominant.red / dominant.count);
         const green = Math.round(dominant.green / dominant.count);
         const blue = Math.round(dominant.blue / dominant.count);
-        const toLinear = value => {
-            const channel = value / 255;
-            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-        };
-        const luminance = 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue);
+        const luminance = getLuminance({ r: red, g: green, b: blue });
 
         button.style.setProperty('--play-color', `rgb(${red}, ${green}, ${blue})`);
         const contrastColor = luminance > 0.179 ? '#000' : '#fff';
@@ -1198,21 +1191,19 @@ function renderLibrary() {
         if (viewMode === 'grid') {
             const hasCover = !!d.cover;
             if (hasCover) card.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(d.cover)}&t=${Date.now()}')`;
-            card.innerHTML = `<div class="fav-badge"></div> ${!hasCover ? `<div class="fallback-title">${d.name}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${d.name}</div></div>`;
+            card.innerHTML = `<div class="fav-badge"></div> ${!hasCover ? `<div class="fallback-title">${escapeHtml(d.name)}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${escapeHtml(d.name)}</div></div>`;
             card.onclick = () => {
                 if (isFullScreenMode) selectListItem(id);
                 else launchItem(id);
             };
         } else {
-            card.innerHTML = `<div class="list-thumb"></div> <div class="list-title">${d.name}</div> <div class="fav-badge" style="position:static;"></div>`;
+            card.innerHTML = `<div class="list-thumb"></div> <div class="list-title">${escapeHtml(d.name)}</div> <div class="fav-badge" style="position:static;"></div>`;
             applyListIcon(card.querySelector('.list-thumb'), id, d);
             card.onclick = () => { if (selectedListId === id) launchItem(id); else selectListItem(id); };
         }
         
         library.appendChild(card);
     });
-
-    try { applySettings(currentSettings); } catch (e) { console.error('Failed to reapply settings after render:', e); }
 
     if (isControllerMode) applyFocus();
 }
