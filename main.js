@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const axios = require('axios');
 const { pathToFileURL } = require('url');
 const THEMES = require('./themes/default-themes.js');
+const glass = require('./glass-main');
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
@@ -17,7 +18,8 @@ function createWindow() {
     const isMac = process.platform === 'darwin';
     const isWin = process.platform === 'win32';
 
-    win = new BrowserWindow({
+    // Window material (Liquid Glass / vibrancy on macOS, Acrylic/Mica on Windows) is handled by glass-main.js
+    win = new BrowserWindow(glass.windowOptions({
         width: 1200, height: 850, minWidth: 800, minHeight: 600,
         frame: true,
         titleBarStyle: isMac ? 'hiddenInset' : isWin ? 'hidden' : 'default',
@@ -27,19 +29,11 @@ function createWindow() {
             height: 38
         } : false,
         trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
-        vibrancy: isMac ? 'under-window' : undefined,
         visualEffectState: isMac ? 'active' : undefined,
         backgroundColor: '#00000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
-    });
-
-    if (isWin && typeof win.setBackgroundMaterial === 'function') {
-        try {
-            win.setBackgroundMaterial('acrylic');
-        } catch (err) {
-            console.error('Failed to apply Windows Acrylic material:', err);
-        }
-    }
+    }));
+    glass.attach(win);
 
     win.loadFile('index.html');
     win.on('closed', () => { win = null; });
@@ -244,13 +238,9 @@ ipcMain.on('set-fullscreen', (event, shouldBeFullScreen) => {
     event.sender.send('fullscreen-changed', targetFullScreen);
 });
 
+// Themes still request a material through this channel; glass-main.js decides how to apply it.
 ipcMain.on('set-window-material', (event, material) => {
-    if (process.platform !== 'win32' || !win || win.isDestroyed() || typeof win.setBackgroundMaterial !== 'function') return;
-    try {
-        win.setBackgroundMaterial(material === 'acrylic' ? 'acrylic' : 'none');
-    } catch (err) {
-        console.error('Failed to set window background material:', err);
-    }
+    glass.applyThemeMaterial(win, material);
 });
 
 ipcMain.on('show-game-context-menu', (event, gameData) => {
