@@ -4,9 +4,28 @@
     <meta charset="UTF-8">
     <title>HB Launcher</title>
     <script>
-        /* Pick the interface style before first paint so there is no flash. */
-        try { document.documentElement.dataset.ui = localStorage.getItem('hb-ui') === 'classic' ? 'classic' : 'modern'; }
-        catch (e) { document.documentElement.dataset.ui = 'modern'; }
+        /* Set interface style, corner mode and OS before first paint so there is no flash. */
+        (function () {
+            var d = document.documentElement;
+            try { d.dataset.ui = localStorage.getItem('hb-ui') === 'classic' ? 'classic' : 'modern'; }
+            catch (e) { d.dataset.ui = 'modern'; }
+            try { d.dataset.corners = localStorage.getItem('hb-corners') === 'soft' ? 'soft' : 'system'; }
+            catch (e) { d.dataset.corners = 'system'; }
+            var os = 'other';
+            try {
+                var rel = require('os').release();
+                if (process.platform === 'darwin') {
+                    var darwin = parseInt(rel, 10);            /* Darwin 25 = macOS 26, 26 = macOS 27 */
+                    os = darwin >= 26 ? 'mac27' : darwin >= 25 ? 'mac26' : 'mac';
+                } else if (process.platform === 'win32') {
+                    os = (parseInt(rel.split('.')[2], 10) || 0) >= 22000 ? 'win11' : 'win10';
+                }
+            } catch (e) {
+                var ua = navigator.userAgent;
+                os = /Mac/.test(ua) ? 'mac' : /Windows/.test(ua) ? 'win11' : 'other';
+            }
+            d.dataset.os = os;
+        })();
     </script>
     <style>
         :root { 
@@ -62,7 +81,7 @@
             letter-spacing: -0.005em;
             -webkit-font-smoothing: antialiased;
             margin: 0; 
-            padding: 3rem 1.5rem 1rem; 
+            padding: 2.25rem 1.5rem 1rem; 
             overflow: hidden; 
             height: 100vh; 
             display: flex; 
@@ -913,6 +932,7 @@
     <!-- Modern interface (scoped to html[data-ui="modern"]) + shared controller-focus styles -->
     <link rel="stylesheet" href="modern.css">
     <link rel="stylesheet" href="modern-dialogs.css">
+    <link rel="stylesheet" href="modern-layout.css">
 </head>
 <body>
     <div class="header" id="appHeader">

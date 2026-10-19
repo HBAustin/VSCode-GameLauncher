@@ -175,10 +175,30 @@
     // Library count label (CSS shows it via data-label)
     // ======================================================================
     const library = document.getElementById('library');
+
+    // The list lives in a "pane" with a fixed heading above it, so the heading never scrolls under the rows.
+    let pane = null;
+    let heading = null;
+    if (library && library.parentElement) {
+        pane = document.createElement('div');
+        pane.className = 'library-pane';
+        heading = document.createElement('div');
+        heading.className = 'library-heading';
+        heading.id = 'libraryHeading';
+        library.before(pane);
+        pane.append(heading, library); // #library keeps its identity, so renderer.js is unaffected
+    }
+
     function updateLabel() {
         if (!library) return;
-        const n = library.querySelectorAll('.game-card').length;
-        library.dataset.label = `Library \u00b7 ${n} ${n === 1 ? 'game' : 'games'}`;
+        const cards = library.querySelectorAll('.game-card');
+        const n = cards.length;
+        // Tooltips matter once the list is dragged narrow enough to show icons only
+        cards.forEach((card) => {
+            const title = card.querySelector('.list-title');
+            if (title && card.title !== title.textContent) card.title = title.textContent;
+        });
+        if (heading) heading.textContent = `Library \u00b7 ${n} ${n === 1 ? 'game' : 'games'}`;
     }
     if (library) {
         new MutationObserver(updateLabel).observe(library, { childList: true });
@@ -474,9 +494,16 @@
                 <p class="settings-group-label">Interface style</p>
                 <div class="ui-style-switch" role="radiogroup" aria-label="Interface style">
                     <label><input type="radio" name="uiStyle" value="modern"><span>Modern</span></label>
-                    <label><input type="radio" name="uiStyle" value="classic"><span>Classic</span></label>
+                    <label><input type="radio" name="uiStyle" value="classic"><span>Minimal</span></label>
                 </div>
                 <p class="glass-status" id="uiStyleHint"></p>
+                <div id="cornersRow">
+                    <label class="settings-toggle" for="cornersToggle" style="margin-top: 12px">
+                        <input type="checkbox" id="cornersToggle">
+                        <span>Match my system's corner radius</span>
+                    </label>
+                    <p class="glass-status" id="cornersHint"></p>
+                </div>
             </div>
             <div class="settings-group" id="brandSection" style="margin: 0 0 20px">
                 <p class="settings-group-label">Launcher logo</p>
@@ -496,7 +523,7 @@
             panel.querySelectorAll('input[name="uiStyle"]').forEach((r) => { r.checked = r.value === style; });
             hint.textContent = style === 'modern'
                 ? 'Cinematic layout. Applies instantly.'
-                : 'The original layout. Applies instantly.';
+                : 'A clean, lightweight layout. Applies instantly.';
         };
         panel.querySelectorAll('input[name="uiStyle"]').forEach((radio) => {
             radio.addEventListener('change', () => {
@@ -508,6 +535,23 @@
         });
         document.getElementById('brandChange').addEventListener('click', chooseBrand);
         document.getElementById('brandReset').addEventListener('click', resetBrand);
+
+        const cornersToggle = document.getElementById('cornersToggle');
+        const cornersHint = document.getElementById('cornersHint');
+        const OS_NAMES = { win11: 'Windows 11', win10: 'Windows 10', mac: 'macOS', mac26: 'macOS 26', mac27: 'macOS 27' };
+        const refreshCorners = () => {
+            cornersToggle.checked = root.dataset.corners !== 'soft';
+            const px = getComputedStyle(root).getPropertyValue('--os-radius').trim();
+            cornersHint.textContent = cornersToggle.checked
+                ? `Panels and menus use ${px} corners, like ${OS_NAMES[root.dataset.os] || 'your system'} windows.`
+                : 'Original soft, rounded corners.';
+        };
+        cornersToggle.addEventListener('change', () => {
+            root.dataset.corners = cornersToggle.checked ? 'system' : 'soft';
+            try { localStorage.setItem('hb-corners', root.dataset.corners); } catch (_) {}
+            refreshCorners();
+        });
+        refreshCorners();
         refresh();
         applyBrand();
     }
@@ -532,6 +576,84 @@
     // ======================================================================
     // Start
     // ======================================================================
+    // ======================================================================
+    // Resizable game list: drag the divider (double-click or Enter to reset)
+    // ======================================================================
+    const SPLIT_KEY = 'hb-sidebar-width';
+    const MIN_SIDEBAR = 56; // icon rail
+    const wrapper = document.getElementById('contentWrapper');
+    const detail = document.getElementById('detail-panel');
+    if (wrapper && library && detail) {
+        const splitter = document.createElement('div');
+        splitter.id = 'splitter';
+        splitter.className = 'splitter';
+        splitter.setAttribute('role', 'separator');
+        splitter.setAttribute('aria-orientation', 'vertical');
+        splitter.setAttribute('aria-label', 'Resize game list');
+        splitter.tabIndex = 0;
+        splitter.title = 'Drag to resize \u00b7 double-click to reset';
+        detail.before(splitter);
+
+        let desired = null; // the width the user asked for; re-clamped whenever the window changes size
+        try { desired = parseInt(localStorage.getItem(SPLIT_KEY), 10) || null; } catch (_) {}
+
+        const maxWidth = () => Math.max(MIN_SIDEBAR, Math.min(window.innerWidth * 0.6, window.innerWidth - 440));
+        const clamp = (w) => Math.round(Math.max(MIN_SIDEBAR, Math.min(maxWidth(), w)));
+        const applyWidth = () => {
+            if (desired == null) {
+                root.style.removeProperty('--sidebar-width'); // back to the stylesheet default
+                splitter.removeAttribute('aria-valuenow');
+                return;
+            }
+            const w = clamp(desired);
+            root.style.setProperty('--sidebar-width', w + 'px');
+            splitter.setAttribute('aria-valuenow', String(w));
+        };
+        const persistWidth = () => {
+            try {
+                if (desired == null) localStorage.removeItem(SPLIT_KEY);
+                else localStorage.setItem(SPLIT_KEY, String(desired));
+            } catch (_) {}
+        };
+        const setWidth = (w, save) => { desired = clamp(w); applyWidth(); if (save) persistWidth(); };
+        const resetWidth = () => { desired = null; applyWidth(); persistWidth(); };
+
+        let drag = null;
+        splitter.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            drag = { x: e.clientX, w: (pane || library).getBoundingClientRect().width };
+            splitter.setPointerCapture(e.pointerId);
+            document.body.classList.add('is-resizing');
+            e.preventDefault();
+        });
+        splitter.addEventListener('pointermove', (e) => {
+            if (drag) setWidth(drag.w + (e.clientX - drag.x), false);
+        });
+        const endDrag = (e) => {
+            if (!drag) return;
+            drag = null;
+            document.body.classList.remove('is-resizing');
+            if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+            persistWidth();
+        };
+        splitter.addEventListener('pointerup', endDrag);
+        splitter.addEventListener('pointercancel', endDrag);
+        splitter.addEventListener('dblclick', resetWidth);
+        splitter.addEventListener('keydown', (e) => {
+            const current = (pane || library).getBoundingClientRect().width;
+            const step = e.shiftKey ? 48 : 16;
+            if (e.key === 'ArrowLeft') setWidth(current - step, true);
+            else if (e.key === 'ArrowRight') setWidth(current + step, true);
+            else if (e.key === 'Home') setWidth(MIN_SIDEBAR, true);
+            else if (e.key === 'End') setWidth(maxWidth(), true);
+            else if (e.key === 'Enter') resetWidth();
+            else return;
+            e.preventDefault();
+        });
+        window.addEventListener('resize', applyWidth);
+        applyWidth();
+    }
+
     root.dataset.ui = readStyle();
     syncPlaceholder();
     buildSettings();
