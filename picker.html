@@ -2,47 +2,468 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Select Asset</title>
+    <title>Select Artwork</title>
+    <script>
+        /* Same detection as the launcher: interface style, corner mode and OS, set before first paint. */
+        (function () {
+            var d = document.documentElement;
+            try { d.dataset.ui = localStorage.getItem('hb-ui') === 'classic' ? 'classic' : 'modern'; }
+            catch (e) { d.dataset.ui = 'modern'; }
+            try { d.dataset.corners = localStorage.getItem('hb-corners') === 'soft' ? 'soft' : 'system'; }
+            catch (e) { d.dataset.corners = 'system'; }
+            var os = 'other';
+            try {
+                var rel = require('os').release();
+                if (process.platform === 'darwin') {
+                    var darwin = parseInt(rel, 10);            /* Darwin 25 = macOS 26, 26 = macOS 27 */
+                    os = darwin >= 26 ? 'mac27' : darwin >= 25 ? 'mac26' : 'mac';
+                } else if (process.platform === 'win32') {
+                    os = (parseInt(rel.split('.')[2], 10) || 0) >= 22000 ? 'win11' : 'win10';
+                }
+            } catch (e) {
+                var ua = navigator.userAgent;
+                os = /Mac/.test(ua) ? 'mac' : /Windows/.test(ua) ? 'win11' : 'other';
+            }
+            d.dataset.os = os;
+        })();
+    </script>
     <style>
-        :root { --accent: #0078d4; }
-        body { background: #1a1a1a; color: white; font-family: 'Segoe UI', sans-serif; padding: 20px; margin: 0; overflow-x: hidden; transition: padding-bottom 0.2s; }
-        body.controller-mode { padding-bottom: 5rem; }
-        .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-        .status-text { flex: 1; padding: 10px; background: #000; border: 1px solid #444; color: white; border-radius: 6px; display: flex; align-items: center; font-size: 0.95rem; }
-        button { padding: 10px 20px; background: var(--accent); border: none; color: white; border-radius: 6px; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s, border-color 0.2s; }
-        body.controller-mode button.header-focused { border-color: #fff !important; background: #111; transform: scale(1.02); }
-        #gameMatches { display: flex; flex-direction: column; gap: 8px; transition: opacity 0.3s; }
-        #results { display: flex; flex-direction: column; gap: 8px; transition: opacity 0.3s; }
-        #results.grid-mode { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; }
-        .search-result { padding: 14px 18px; background: #252525; border-radius: 8px; cursor: pointer; border: 1px solid #333; font-size: 1rem; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
-        .search-result:hover, body.controller-mode .search-result.focused { background: #333; border-color: var(--accent); transform: none; }
-        
-        .grid-item { width: 100%; background: #333 center/cover; border-radius: 8px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
-        .grid-item.cover-mode { aspect-ratio: 2/3; }
-        .grid-item.icon-mode { aspect-ratio: 1/1; background-size: contain; background-repeat: no-repeat; }
-        .grid-item.background-mode { aspect-ratio: 16/9; }
-        .grid-item.logo-mode { aspect-ratio: 16/9; background-size: contain; background-repeat: no-repeat; }
-        .grid-item:hover, body.controller-mode .grid-item.focused { transform: scale(1.05); border-color: var(--accent); box-shadow: 0 0 15px rgba(0, 120, 212, 0.4); }
-        
-        .picker-footer { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #0f0f0f; padding: 1rem 2rem; border-top: 1px solid #333; gap: 2rem; justify-content: flex-start; align-items: center; }
-        body.controller-mode .picker-footer { display: flex; }
-        .glyph-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: bold; }
-        .glyph { width: 26px; height: 26px; background: white; color: black; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
-        .glyph.a { background: #107c10; color: white; }
-        .glyph.b { background: #e81123; color: white; }
-        .glyph.ps-cross, .glyph.ps-circle { background: white; color: #111; }
+        /* ======================================================================
+           Tokens. renderer/theme values are filled in by the script below.
+           ====================================================================== */
+        :root {
+            color-scheme: dark;
+            --accent: #fc9677;
+            --accent-contrast: #1a1517;
+            --bg: rgba(12, 12, 12, 0.65);
+            --text: #ffffff;
+            --surface: #0f0f13;
+            --on-surface: #f2f3f5;
+            --glass-strength: 0.6;
+            --muted: color-mix(in srgb, var(--on-surface) 58%, transparent);
+            --card: color-mix(in srgb, var(--on-surface) 5%, transparent);
+            --card-hover: color-mix(in srgb, var(--on-surface) 9%, transparent);
+            --stroke: color-mix(in srgb, var(--on-surface) 10%, transparent);
+            --stroke-strong: color-mix(in srgb, var(--on-surface) 18%, transparent);
+            --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        /* OS window corner radius (same values as the launcher) */
+        html { --os-radius: 12px; }
+        html[data-os="win11"] { --os-radius: 8px; }
+        html[data-os="win10"] { --os-radius: 4px; }
+        html[data-os="mac"]   { --os-radius: 10px; }
+        html[data-os="mac26"] { --os-radius: 26px; }
+        html[data-os="mac27"] { --os-radius: 20px; }
+
+        html { --r-1: 22px; --r-2: 16px; --r-3: 12px; --r-4: 8px; }          /* soft */
+        html[data-corners="system"] {                                          /* match the OS */
+            --r-1: var(--os-radius);
+            --r-2: max(calc(var(--os-radius) - 8px), 4px);
+            --r-3: max(calc(var(--os-radius) - 12px), 4px);
+            --r-4: max(calc(var(--os-radius) - 16px), 3px);
+        }
+
+        * { box-sizing: border-box; outline: none; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+        *::-webkit-scrollbar { width: 10px; height: 10px; }
+        *::-webkit-scrollbar-track { background: transparent; }
+        *::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+        *::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: padding-box; border: 3px solid transparent; }
+
+        html { height: 100%; background: transparent; }
+        body {
+            margin: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            color: var(--on-surface);
+            background: var(--surface);
+            font-family: "Segoe UI Variable Text", "SF Pro Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            letter-spacing: -0.005em;
+            -webkit-font-smoothing: antialiased;
+        }
+        /* Native glass (acrylic / Liquid Glass): show the theme as a tint over it */
+        body.native-glass { background: color-mix(in srgb, var(--bg) calc(var(--glass-strength) * 100%), transparent); }
+
+        button, input { font-family: inherit; }
+
+        /* ======================================================================
+           Title bar (also the window drag area)
+           ====================================================================== */
+        .titlebar {
+            flex: none;
+            display: flex;
+            align-items: center;
+            min-height: 56px;
+            padding: 12px 24px 6px;
+            -webkit-app-region: drag;
+        }
+        html[data-os^="mac"] .titlebar { padding-left: 88px; }     /* room for the traffic lights */
+        html[data-os^="win"] .titlebar { padding-right: 150px; }   /* room for the window buttons */
+        .titlebar h2 { margin: 0; font-size: 1.15rem; font-weight: 750; letter-spacing: -0.02em; }
+        .subtitle { margin: 2px 0 0; color: var(--muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .titlebar-text { min-width: 0; }
+
+        /* ======================================================================
+           Content
+           ====================================================================== */
+        .content { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 24px 28px; }
+        body.controller-mode .content { padding-bottom: 100px; }
+
+        .search-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: var(--card);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-1);
+        }
+        .search-field { position: relative; flex: 1; min-width: 0; }
+        .search-field .ico { position: absolute; left: 14px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: var(--muted); pointer-events: none; }
+        #searchInput {
+            width: 100%;
+            height: 42px;
+            padding: 0 14px 0 40px;
+            color: inherit;
+            font-size: 0.95rem;
+            background: color-mix(in srgb, var(--on-surface) 6%, transparent);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-3);
+            transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+        }
+        #searchInput::placeholder { color: var(--muted); }
+        #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+
+        .btn {
+            flex: none;
+            height: 42px;
+            padding: 0 18px;
+            color: inherit;
+            font-size: 0.88rem;
+            font-weight: 650;
+            white-space: nowrap;
+            cursor: pointer;
+            background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-3);
+            transition: background 0.2s var(--ease), border-color 0.2s var(--ease), transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+        }
+        .btn:hover { background: color-mix(in srgb, var(--on-surface) 15%, transparent); border-color: var(--stroke-strong); }
+        .btn:active { transform: scale(0.97); }
+        .btn:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+        .btn.primary {
+            color: var(--accent-contrast);
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffffff));
+            border-color: transparent;
+            box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 35%, transparent);
+        }
+        .btn.primary:hover { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ffffff)); }
+        /* Controller focus on the Browse button */
+        body.controller-mode .btn.header-focused {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+        }
+
+        /* Status line */
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 22px;
+            margin: 16px 4px 4px;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+        .status[data-state="loading"]::before {
+            content: "";
+            flex: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+            border-top-color: var(--accent);
+            animation: spin 0.8s linear infinite;
+        }
+        .status[data-state="error"] { color: #ff7a7a; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Current artwork */
+        .current {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 14px;
+            padding: 12px 14px;
+            background: var(--card);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-2);
+        }
+        .current[hidden] { display: none; }
+        .current-preview {
+            flex: none;
+            height: 64px;
+            aspect-ratio: 16 / 9;
+            border-radius: var(--r-3);
+            border: 1px solid var(--stroke);
+            background: color-mix(in srgb, var(--on-surface) 6%, transparent) center / cover no-repeat;
+        }
+        .current[data-type="cover"] .current-preview { aspect-ratio: 2 / 3; height: 84px; }
+        .current[data-type="icon"] .current-preview { aspect-ratio: 1; background-size: contain; }
+        .current[data-type="logo"] .current-preview { background-size: contain; }
+        .current-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .current-text strong { font-size: 0.92rem; font-weight: 700; }
+        .current-text span { color: var(--muted); font-size: 0.8rem; }
+
+        /* Game matches */
+        #gameMatches { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+        #gameMatches:empty { display: none; }
+        .search-result {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 14px 10px 10px;
+            cursor: pointer;
+            background: var(--card);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-2);
+            transition: background 0.15s ease, border-color 0.15s ease, transform 0.2s var(--ease);
+        }
+        .search-result:hover,
+        body.controller-mode .search-result.focused,
+        .search-result:focus-visible {
+            background: color-mix(in srgb, var(--accent) 14%, transparent);
+            border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+        }
+        body.controller-mode .search-result.focused { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+        .sr-avatar {
+            flex: none;
+            display: grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--accent-contrast);
+            border-radius: var(--r-3);
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #ffffff)) center / cover no-repeat;
+        }
+        .sr-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+        .sr-name { font-weight: 700; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sr-platform { color: var(--muted); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sr-go { flex: none; width: 18px; height: 18px; color: var(--muted); transition: transform 0.2s var(--ease), color 0.2s; }
+        .search-result:hover .sr-go { color: var(--accent); transform: translateX(3px); }
+
+        .selected-chip {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px 10px 14px;
+            background: color-mix(in srgb, var(--accent) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+            border-radius: var(--r-2);
+            font-size: 0.9rem;
+        }
+        .selected-chip span { color: var(--muted); }
+        .selected-chip strong { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .selected-chip button {
+            height: 30px;
+            padding: 0 12px;
+            color: inherit;
+            font-size: 0.8rem;
+            font-weight: 650;
+            cursor: pointer;
+            background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-4);
+        }
+        .selected-chip button:hover { background: color-mix(in srgb, var(--on-surface) 18%, transparent); }
+
+        /* Artwork grid */
+        #results { margin-top: 14px; }
+        #results:empty { display: none; }
+        #results.grid-mode { display: grid; gap: 14px; }
+        #results[data-type="cover"] { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+        #results[data-type="icon"] { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+        #results[data-type="background"],
+        #results[data-type="logo"] { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+        .grid-item {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            cursor: pointer;
+            background: var(--card);
+            border: 1px solid var(--stroke);
+            border-radius: var(--r-2);
+            transition: transform 0.3s var(--ease), border-color 0.2s ease, box-shadow 0.3s var(--ease);
+        }
+        .grid-item.cover-mode { aspect-ratio: 2 / 3; }
+        .grid-item.icon-mode { aspect-ratio: 1 / 1; }
+        .grid-item.background-mode { aspect-ratio: 16 / 9; }
+        .grid-item.logo-mode { aspect-ratio: 16 / 9; }
+        /* Transparent artwork reads better on a checkerboard */
+        .grid-item.icon-mode,
+        .grid-item.logo-mode {
+            background-image: repeating-conic-gradient(color-mix(in srgb, var(--on-surface) 8%, transparent) 0 25%, transparent 0 50%);
+            background-size: 16px 16px;
+        }
+        .gi-img { position: absolute; inset: 0; opacity: 0; background: center / cover no-repeat; transition: opacity 0.35s ease; }
+        .gi-img.loaded { opacity: 1; }
+        .grid-item.icon-mode .gi-img { inset: 10%; background-size: contain; }
+        .grid-item.logo-mode .gi-img { inset: 8%; background-size: contain; }
+
+        .grid-item::after {
+            content: "Use this";
+            position: absolute;
+            left: 8px;
+            right: 8px;
+            bottom: 8px;
+            padding: 6px 10px;
+            color: var(--accent-contrast);
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-align: center;
+            background: var(--accent);
+            border-radius: var(--r-4);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.2s ease, transform 0.25s var(--ease);
+        }
+        .grid-item:hover,
+        body.controller-mode .grid-item.focused {
+            transform: translateY(-3px);
+            border-color: var(--accent);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+        }
+        .grid-item:hover::after,
+        body.controller-mode .grid-item.focused::after { opacity: 1; transform: none; }
+        body.controller-mode .grid-item.focused { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+        /* Skeleton while loading */
+        .grid-item.pending { pointer-events: none; animation: shimmer 1.4s ease-in-out infinite; }
+        .grid-item.pending::after { display: none; }
+        @keyframes shimmer { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+        /* Empty / error states */
+        .empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 36px 20px;
+            color: var(--muted);
+            text-align: center;
+            font-size: 0.9rem;
+            border: 1px dashed var(--stroke-strong);
+            border-radius: var(--r-2);
+        }
+        .empty .badge {
+            display: grid;
+            place-items: center;
+            width: 52px;
+            height: 52px;
+            color: var(--on-surface);
+            background: color-mix(in srgb, var(--accent) 16%, transparent);
+            border-radius: var(--r-1);
+        }
+        .empty .badge svg { width: 24px; height: 24px; }
+        .empty strong { color: var(--on-surface); font-size: 0.98rem; }
+
+        /* Applying overlay */
+        .busy {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: grid;
+            place-items: center;
+            background: color-mix(in srgb, var(--surface) 72%, transparent);
+        }
+        .busy[hidden] { display: none; }
+        .busy-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px 22px;
+            font-weight: 650;
+            background: color-mix(in srgb, var(--surface) 94%, var(--accent));
+            border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--stroke-strong));
+            border-radius: var(--r-1);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+            border-top-color: var(--accent);
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* Controller hints */
+        .picker-footer {
+            position: fixed;
+            left: 50%;
+            bottom: -120px;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2rem;
+            padding: 10px 28px;
+            background: color-mix(in srgb, var(--surface) 92%, transparent);
+            border: 1px solid var(--stroke-strong);
+            border-radius: var(--r-1);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+            transition: bottom 0.5s var(--ease);
+        }
+        body.controller-mode .picker-footer { bottom: 18px; }
+        .glyph-item { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; }
+        .glyph { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; font-size: 0.8rem; font-weight: 800; color: #0a0a0a; background: #ffffff; border-radius: 50%; }
+        .glyph.a:not(.ps-cross)::after { content: "A"; }
+        .glyph.b:not(.ps-circle)::after { content: "B"; }
+
+        /* Minimal interface style: flatter, no glow */
+        html[data-ui="classic"] .btn.primary { box-shadow: none; }
+        html[data-ui="classic"] .grid-item:hover { transform: none; box-shadow: none; }
+        html[data-ui="classic"] .search-card { background: transparent; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
     </style>
 </head>
 <body>
-    <h2 id="pickerTitle">Select Asset</h2>
-    <div class="search-bar">
-        <input id="searchInput" type="search" placeholder="Search SteamGridDB..." style="flex:1; padding:10px; border:2px solid #333; border-radius:6px; background:#111; color:white;">
-        <button id="searchBtn" style="margin-left:8px;">Search</button>
-        <button id="chooseBtn" onclick="chooseLocalAsset()" style="margin-left:8px;">Browse Local Files</button>
+    <header class="titlebar">
+        <div class="titlebar-text">
+            <h2 id="pickerTitle">Select Asset</h2>
+            <p id="pickerGame" class="subtitle"></p>
+        </div>
+    </header>
+
+    <main class="content">
+        <section class="search-card">
+            <div class="search-field">
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="searchInput" type="search" placeholder="Search SteamGridDB...">
+            </div>
+            <button id="searchBtn" class="btn primary" type="button">Search</button>
+            <button id="chooseBtn" class="btn" type="button" onclick="chooseLocalAsset()">Browse files</button>
+        </section>
+
+        <div id="statusText" class="status" data-state="info">Initializing...</div>
+
+        <section id="currentAsset" class="current" hidden>
+            <div id="currentPreview" class="current-preview"></div>
+            <div class="current-text"><strong id="currentLabel">Current artwork</strong><span>Pick a new one below to replace it.</span></div>
+        </section>
+
+        <div id="gameMatches"></div>
+        <div id="results"></div>
+    </main>
+
+    <div id="busy" class="busy" hidden>
+        <div class="busy-card"><div class="spinner"></div><span id="busyText">Applying...</span></div>
     </div>
-    <div id="statusText" class="status-text">Initializing...</div>
-    <div id="gameMatches" style="padding: 20px; color: #888;"></div>
-    <div id="results" style="padding: 20px; color: #888;"></div>
 
     <div class="picker-footer">
         <div class="glyph-item"><div id="selectGlyph" class="glyph a"></div> Select</div>
@@ -51,12 +472,14 @@
 
     <script>
         const { ipcRenderer } = require('electron');
+        const fs = require('fs');
+
         let currentGameId = null;
         let currentType = 'cover';
         let currentOldPath = null;
         let currentProtectedPaths = [];
         let selectedSteamGridGame = null;
-        
+
         let isControllerMode = false;
         let currentZone = 'header';
         let focusIndex = 0;
@@ -70,10 +493,141 @@
         const status = document.getElementById('statusText');
         const gameMatches = document.getElementById('gameMatches');
         const results = document.getElementById('results');
+        const busyEl = document.getElementById('busy');
 
+        const TYPE_NAMES = { cover: 'cover', icon: 'list icon', background: 'background', logo: 'logo' };
+
+        // ------------------------------------------------------------------
+        // Small helpers
+        // ------------------------------------------------------------------
+        function setStatus(text, state = 'info') {
+            status.textContent = text;
+            status.dataset.state = state;
+        }
+        function setBusy(text) {
+            if (text) document.getElementById('busyText').textContent = text;
+            busyEl.hidden = !text;
+        }
+        function svg(paths) {
+            return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+        }
+        const ICONS = {
+            search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+            image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+            alert: svg('<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'),
+            chevron: svg('<polyline points="9 18 15 12 9 6"/>'),
+        };
+        function showEmpty(container, icon, title, hint) {
+            container.replaceChildren();
+            const box = document.createElement('div');
+            box.className = 'empty';
+            const badge = document.createElement('div');
+            badge.className = 'badge';
+            badge.innerHTML = ICONS[icon] || ICONS.image;
+            const strong = document.createElement('strong');
+            strong.textContent = title;
+            box.append(badge, strong);
+            if (hint) {
+                const p = document.createElement('span');
+                p.textContent = hint;
+                box.append(p);
+            }
+            container.append(box);
+        }
+        function showSkeleton(type) {
+            results.className = 'grid-mode';
+            results.dataset.type = type;
+            results.replaceChildren();
+            const count = type === 'cover' || type === 'icon' ? 12 : 8;
+            for (let i = 0; i < count; i++) {
+                const cell = document.createElement('div');
+                cell.className = `grid-item ${type}-mode pending`;
+                results.append(cell);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Theme: pick up the launcher's colours, glass and corner settings
+        // ------------------------------------------------------------------
+        const swatch = document.createElement('canvas');
+        swatch.width = swatch.height = 1;
+        const swatchCtx = swatch.getContext('2d', { willReadFrequently: true });
+        function parseColor(css, base = [18, 18, 20]) {
+            swatchCtx.clearRect(0, 0, 1, 1);
+            swatchCtx.fillStyle = `rgb(${base.join(',')})`;
+            swatchCtx.fillRect(0, 0, 1, 1);
+            swatchCtx.fillStyle = String(css || '').trim();
+            swatchCtx.fillRect(0, 0, 1, 1);
+            const d = swatchCtx.getImageData(0, 0, 1, 1).data;
+            return [d[0], d[1], d[2]];
+        }
+        const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+        async function applyTheme() {
+            const root = document.documentElement;
+            let settings = {};
+            try { settings = (await ipcRenderer.invoke('get-settings')) || {}; } catch (_) {}
+            const colors = settings.customColors || {};
+            const theme = settings.theme || 'dark';
+
+            const accent = theme === 'dynamic' ? '#fc9677' : (colors.accent || '#fc9677');
+            const bg = process.platform === 'darwin' ? 'rgba(12, 12, 12, 0.65)' : (colors.background || 'rgba(12, 12, 12, 0.65)');
+            const text = colors.text || '#ffffff';
+            root.style.setProperty('--accent', accent);
+            root.style.setProperty('--accent-contrast', lum(parseColor(accent)) > 0.179 ? '#111111' : '#ffffff');
+            root.style.setProperty('--bg', bg);
+            root.style.setProperty('--text', text);
+
+            // Opaque panel colour from the theme (same rule as the launcher)
+            let surface;
+            let onSurface = '#f2f3f5';
+            if (theme === 'dynamic') {
+                surface = [11, 11, 15];
+            } else {
+                const light = lum(parseColor(text, [0, 0, 0])) < 0.35; // dark text means a light theme
+                const c = parseColor(bg, light ? [244, 244, 247] : [18, 18, 20]);
+                surface = light ? mix(c, [255, 255, 255], 0.55) : mix(c, [8, 8, 12], 0.5);
+                if (light) onSurface = '#15151a';
+            }
+            root.style.setProperty('--surface', `rgb(${surface.join(',')})`);
+            root.style.setProperty('--on-surface', onSurface);
+
+            // Native glass (acrylic / Liquid Glass) set up by main.js for this window
+            try {
+                const glass = await ipcRenderer.invoke('glass:get');
+                const active = glass && ['liquid', 'vibrancy', 'acrylic', 'mica'].includes(glass.state);
+                document.body.classList.toggle('native-glass', !!active);
+                if (glass && glass.settings) root.style.setProperty('--glass-strength', String(glass.settings.strength / 100));
+            } catch (_) {}
+        }
+        applyTheme();
+
+        // ------------------------------------------------------------------
+        // Current artwork preview
+        // ------------------------------------------------------------------
+        let currentPreviewUrl = null;
+        function showCurrent(filePath, type) {
+            const box = document.getElementById('currentAsset');
+            if (currentPreviewUrl) { URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
+            if (!filePath || !fs.existsSync(filePath)) { box.hidden = true; return; }
+            try {
+                currentPreviewUrl = URL.createObjectURL(new Blob([fs.readFileSync(filePath)]));
+                document.getElementById('currentPreview').style.backgroundImage = `url("${currentPreviewUrl}")`;
+                document.getElementById('currentLabel').textContent = `Current ${TYPE_NAMES[type] || 'artwork'}`;
+                box.dataset.type = type;
+                box.hidden = false;
+            } catch (_) { box.hidden = true; }
+        }
+
+        // ------------------------------------------------------------------
+        // Events from the launcher
+        // ------------------------------------------------------------------
         document.getElementById('chooseBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter') chooseLocalAsset(); });
         searchBtn.addEventListener('click', () => searchSteamGridGames(searchInput.value.trim()));
         searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchSteamGridGames(searchInput.value.trim()); });
+        window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
 
         ipcRenderer.on('init-picker', (e, data) => {
             currentGameId = data.gameId;
@@ -81,55 +635,79 @@
             currentOldPath = data.oldPath || null;
             currentProtectedPaths = data.protectedPaths || [];
             const titleMap = { cover: 'Select Cover', icon: 'Select List Icon', background: 'Select Detail Background', logo: 'Select Logo' };
-            document.getElementById('pickerTitle').innerText = titleMap[currentType] || 'Select Asset';
+            document.getElementById('pickerTitle').textContent = titleMap[currentType] || 'Select Asset';
+            document.getElementById('pickerGame').textContent = data.name || '';
             searchInput.value = data.name || '';
-            status.innerText = 'Verify or edit the game name, then search SteamGridDB.';
-            gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No search has been made yet.</div>';
-            results.innerHTML = '';
+            showCurrent(currentOldPath, currentType);
+            setStatus('Check the game name, then search SteamGridDB.');
+            showEmpty(gameMatches, 'search', 'No search yet', 'Press Search to find artwork, or browse your own files.');
+            results.replaceChildren();
             searchInput.focus();
             searchInput.select();
         });
 
+        // The launcher reports a failed download/copy; get out of the busy state instead of freezing.
+        ipcRenderer.on('apply-asset-failed', (e, info) => {
+            setBusy(null);
+            setStatus(`Couldn't apply that image: ${(info && info.error) || 'unknown error'}`, 'error');
+        });
+
+        // ------------------------------------------------------------------
+        // SteamGridDB search
+        // ------------------------------------------------------------------
         async function searchSteamGridGames(gameName) {
             if (!gameName) {
-                status.innerText = 'Enter a game name to search SteamGridDB.';
-                gameMatches.innerHTML = '';
-                results.innerHTML = '';
+                setStatus('Enter a game name to search SteamGridDB.');
+                gameMatches.replaceChildren();
+                results.replaceChildren();
                 return;
             }
 
-            status.innerText = `Searching SteamGridDB for "${gameName}"...`;
-            gameMatches.innerHTML = '<div style="padding:20px; color:#888;">Searching for game matches...</div>';
-            results.innerHTML = '';
+            setStatus(`Searching SteamGridDB for \u201c${gameName}\u201d...`, 'loading');
+            gameMatches.replaceChildren();
+            results.replaceChildren();
             selectedSteamGridGame = null;
 
             const response = await ipcRenderer.invoke('search-steamgriddb-games', gameName);
-            if (!response.success) {
-                status.innerText = `SteamGridDB: ${response.error}.`;
-                gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No matches found. Please try a different name or use local files.</div>';
+            if (!response.success || !response.data || !response.data.length) {
+                setStatus(response.success ? 'No matches found.' : `SteamGridDB: ${response.error}`, response.success ? 'info' : 'error');
+                showEmpty(gameMatches, 'alert', 'No matches', 'Try a different name, or use \u201cBrowse files\u201d to pick your own image.');
                 return;
             }
 
-            if (!response.data.length) {
-                status.innerText = 'No matches found.';
-                gameMatches.innerHTML = '<div style="padding:20px; color:#888;">No matches found. Please try a different name or use local files.</div>';
-                return;
-            }
-
-            status.innerText = 'Select the correct game from the SteamGridDB matches below.';
-            gameMatches.classList.remove('grid-mode');
-            gameMatches.innerHTML = '';
-            response.data.forEach((game, index) => {
+            setStatus('Select the correct game from the SteamGridDB matches.');
+            gameMatches.replaceChildren();
+            response.data.forEach((game) => {
                 const item = document.createElement('div');
                 item.className = 'search-result';
-                item.innerHTML = `
-                    <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
-                        <span style="font-weight:700;">${game.name}</span>
-                        ${game.platform ? `<span style="opacity:.75; font-size:.9rem;">${game.platform}</span>` : ''}
-                    </div>
-                    <span style="opacity:.7; font-size:.85rem;">Select</span>
-                `;
+                item.tabIndex = 0;
+                item.setAttribute('role', 'button');
+
+                const avatar = document.createElement('span');
+                avatar.className = 'sr-avatar';
+                if (game.thumb) avatar.style.backgroundImage = `url("${String(game.thumb).replace(/"/g, '%22')}")`;
+                else avatar.textContent = (game.name || '?').trim().charAt(0).toUpperCase();
+
+                const meta = document.createElement('span');
+                meta.className = 'sr-meta';
+                const name = document.createElement('span');
+                name.className = 'sr-name';
+                name.textContent = game.name;
+                meta.append(name);
+                if (game.platform) {
+                    const platform = document.createElement('span');
+                    platform.className = 'sr-platform';
+                    platform.textContent = game.platform;
+                    meta.append(platform);
+                }
+
+                const go = document.createElement('span');
+                go.className = 'sr-go';
+                go.innerHTML = ICONS.chevron;
+
+                item.append(avatar, meta, go);
                 item.onclick = () => selectSteamGridGame(game);
+                item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectSteamGridGame(game); } });
                 gameMatches.appendChild(item);
             });
             currentZone = 'matches';
@@ -139,36 +717,62 @@
 
         async function selectSteamGridGame(game) {
             selectedSteamGridGame = game;
-            status.innerText = `Fetching assets for ${game.name}...`;
-            gameMatches.innerHTML = `<div style="padding:20px; color:#ccc;">Selected: <strong>${game.name}</strong></div>`;
-            await loadSteamGridAssets(searchInput.value.trim(), currentType, selectedSteamGridGame.id);
+            setStatus(`Fetching artwork for ${game.name}...`, 'loading');
+
+            gameMatches.replaceChildren();
+            const chip = document.createElement('div');
+            chip.className = 'selected-chip';
+            const label = document.createElement('span');
+            label.textContent = 'Game';
+            const title = document.createElement('strong');
+            title.textContent = game.name;
+            const change = document.createElement('button');
+            change.type = 'button';
+            change.textContent = 'Change';
+            change.onclick = () => searchSteamGridGames(searchInput.value.trim());
+            chip.append(label, title, change);
+            gameMatches.append(chip);
+
+            await loadSteamGridAssets(searchInput.value.trim(), currentType, game.id);
         }
 
         async function loadSteamGridAssets(gameName, type, sgGameId) {
-            status.innerText = `Searching SteamGridDB assets for "${gameName}"...`;
-            results.innerHTML = '<div style="padding:20px; color:#888;">Fetching online assets...</div>';
+            showSkeleton(type);
 
             const response = await ipcRenderer.invoke('fetch-steamgriddb-assets', gameName, type, sgGameId);
             if (!response.success) {
-                status.innerText = `SteamGridDB: ${response.error}.`;
-                results.innerHTML = '<div style="padding:20px; color:#888;">No online assets found or API key missing. Please browse local files.</div>';
+                setStatus(`SteamGridDB: ${response.error}`, 'error');
+                showEmpty(results, 'alert', 'No online artwork', 'Nothing was found, or the API key is missing. You can still browse your own files.');
+                results.className = '';
                 return;
             }
 
-            status.innerText = selectedSteamGridGame ? `Select an asset for ${selectedSteamGridGame.name}` : `Select an asset from SteamGridDB`;
-            results.classList.add('grid-mode');
-            results.innerHTML = '';
+            setStatus(selectedSteamGridGame ? `Choose ${TYPE_NAMES[type] || 'artwork'} for ${selectedSteamGridGame.name}` : 'Choose artwork from SteamGridDB');
+            results.className = 'grid-mode';
+            results.dataset.type = type;
+            results.replaceChildren();
             response.data.forEach((asset) => {
-                const img = document.createElement('div');
-                img.className = `grid-item ${type}-mode`;
-                img.style.backgroundImage = `url('${asset.thumb}')`;
-                img.onclick = () => {
-                    status.innerText = 'Downloading and applying asset...';
-                    results.style.opacity = 0.5;
-                    results.style.pointerEvents = 'none';
+                const cell = document.createElement('div');
+                cell.className = `grid-item ${type}-mode pending`;
+                const image = document.createElement('div');
+                image.className = 'gi-img';
+                cell.append(image);
+
+                // Fade the thumbnail in once it has actually loaded
+                const probe = new Image();
+                probe.onload = () => {
+                    image.style.backgroundImage = `url("${String(asset.thumb).replace(/"/g, '%22')}")`;
+                    image.classList.add('loaded');
+                    cell.classList.remove('pending');
+                };
+                probe.onerror = () => cell.classList.remove('pending');
+                probe.src = asset.thumb;
+
+                cell.onclick = () => {
+                    setBusy('Downloading and applying...');
                     ipcRenderer.send('apply-asset', { gameId: currentGameId, imageUrl: asset.url, type: currentType, oldPath: currentOldPath, protectedPaths: currentProtectedPaths });
                 };
-                results.appendChild(img);
+                results.appendChild(cell);
             });
             currentZone = 'results';
             focusIndex = 0;
@@ -178,12 +782,13 @@
         async function chooseLocalAsset() {
             const selected = await ipcRenderer.invoke('select-asset-image');
             if (!selected) return;
-            status.innerText = 'Applying local asset...';
-            results.style.opacity = 0.5;
-            results.style.pointerEvents = 'none';
+            setBusy('Applying your image...');
             ipcRenderer.send('apply-asset', { gameId: currentGameId, imagePath: selected, type: currentType, oldPath: currentOldPath, protectedPaths: currentProtectedPaths });
         }
 
+        // ------------------------------------------------------------------
+        // Controller support
+        // ------------------------------------------------------------------
         function setControllerActive(state) {
             if (isControllerMode === state) return;
             isControllerMode = state;
@@ -199,29 +804,30 @@
             if (!selectGlyph || !cancelGlyph) return;
             selectGlyph.className = `glyph ${isPlayStation ? 'ps-cross' : 'a'}`;
             cancelGlyph.className = `glyph ${isPlayStation ? 'ps-circle' : 'b'}`;
-            selectGlyph.textContent = isPlayStation ? '×' : 'A';
-            cancelGlyph.textContent = isPlayStation ? '○' : 'B';
+            selectGlyph.textContent = isPlayStation ? '\u00d7' : '';
+            cancelGlyph.textContent = isPlayStation ? '\u25cb' : '';
         }
 
         window.addEventListener('mousemove', () => setControllerActive(false));
-        window.addEventListener('keydown', (e) => { if (document.activeElement !== document.getElementById('chooseBtn')) setControllerActive(false); });
+        window.addEventListener('keydown', () => { if (document.activeElement !== chooseBtn) setControllerActive(false); });
 
         function applyFocus() {
             if (!isControllerMode) return;
-            const btnEl = document.getElementById('chooseBtn');
-            btnEl.classList.remove('header-focused');
-            document.querySelectorAll('#gameMatches .search-result').forEach(el => el.classList.remove('focused'));
-            document.querySelectorAll('#results .grid-item').forEach(el => el.classList.remove('focused'));
+            chooseBtn.classList.remove('header-focused');
+            document.querySelectorAll('#gameMatches .search-result').forEach((el) => el.classList.remove('focused'));
+            document.querySelectorAll('#results .grid-item').forEach((el) => el.classList.remove('focused'));
             if (currentZone === 'header') {
-                btnEl.classList.add('header-focused');
-                btnEl.focus();
+                chooseBtn.classList.add('header-focused');
+                chooseBtn.focus();
             } else if (currentZone === 'matches') {
-                btnEl.blur();
+                chooseBtn.blur();
                 const items = document.querySelectorAll('#gameMatches .search-result');
-                items[focusIndex]?.classList.add('focused');
-                items[focusIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (items[focusIndex]) {
+                    items[focusIndex].classList.add('focused');
+                    items[focusIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             } else {
-                btnEl.blur();
+                chooseBtn.blur();
                 const items = document.querySelectorAll('#results .grid-item');
                 if (items[focusIndex]) {
                     items[focusIndex].classList.add('focused');
@@ -235,7 +841,7 @@
             const gamepads = navigator.getGamepads();
             let activeGp = null;
             for (const gp of gamepads) {
-                if (gp && gp.connected && (gp.buttons.some(b => b.pressed) || gp.axes.some(a => Math.abs(a) > 0.5))) {
+                if (gp && gp.connected && (gp.buttons.some((b) => b.pressed) || gp.axes.some((a) => Math.abs(a) > 0.5))) {
                     activeGp = gp;
                     setControllerActive(true);
                     if (lastActiveGamepadIndex !== gp.index) {
@@ -245,7 +851,7 @@
                     break;
                 }
             }
-            if (!activeGp && isControllerMode) activeGp = gamepads[lastActiveGamepadIndex] || Array.from(gamepads).find(p => p !== null);
+            if (!activeGp && isControllerMode) activeGp = gamepads[lastActiveGamepadIndex] || Array.from(gamepads).find((p) => p !== null);
 
             if (activeGp && isControllerMode) {
                 const now = Date.now();
@@ -253,10 +859,10 @@
                     let moved = false;
                     const horizontal = activeGp.axes[0] || 0;
                     const vertical = activeGp.axes[1] || 0;
-                    const dpadLeft = activeGp.buttons[14]?.pressed;
-                    const dpadRight = activeGp.buttons[15]?.pressed;
-                    const dpadUp = activeGp.buttons[12]?.pressed;
-                    const dpadDown = activeGp.buttons[13]?.pressed;
+                    const dpadLeft = activeGp.buttons[14] && activeGp.buttons[14].pressed;
+                    const dpadRight = activeGp.buttons[15] && activeGp.buttons[15].pressed;
+                    const dpadUp = activeGp.buttons[12] && activeGp.buttons[12].pressed;
+                    const dpadDown = activeGp.buttons[13] && activeGp.buttons[13].pressed;
                     const useVertical = Math.abs(vertical) >= Math.abs(horizontal);
                     const up = dpadUp || (useVertical && vertical < -0.5);
                     const down = dpadDown || (useVertical && vertical > 0.5);
@@ -280,26 +886,27 @@
                     } else {
                         const items = document.querySelectorAll('#results .grid-item');
                         const total = items.length;
-                        const resultsGrid = document.getElementById('results');
-                        const columns = getComputedStyle(resultsGrid).gridTemplateColumns.split(' ').filter(Boolean).length;
+                        const columns = getComputedStyle(results).gridTemplateColumns.split(' ').filter(Boolean).length;
                         const cols = Math.max(1, columns || 1);
 
                         if (down && focusIndex + cols < total) { focusIndex += cols; moved = true; }
-                        else if (up) { 
-                            if (focusIndex < cols) { currentZone = 'header'; moved = true; } 
-                            else { focusIndex -= cols; moved = true; } 
+                        else if (up) {
+                            if (focusIndex < cols) { currentZone = 'header'; moved = true; }
+                            else { focusIndex -= cols; moved = true; }
                         }
                         else if (right && focusIndex + 1 < total) { focusIndex++; moved = true; }
                         else if (left && focusIndex > 0) { focusIndex--; moved = true; }
                     }
                     if (moved) { applyFocus(); lastMoveTime = now; }
                 }
-                const pressedA = activeGp.buttons[0]?.pressed && !lastButtonState[0];
-                const pressedB = activeGp.buttons[1]?.pressed && !lastButtonState[1];
+                const pressedA = activeGp.buttons[0] && activeGp.buttons[0].pressed && !lastButtonState[0];
+                const pressedB = activeGp.buttons[1] && activeGp.buttons[1].pressed && !lastButtonState[1];
                 if (pressedA) {
                     if (currentZone === 'header') chooseLocalAsset();
-                    else if (currentZone === 'matches') document.querySelectorAll('#gameMatches .search-result')[focusIndex]?.click();
-                    else {
+                    else if (currentZone === 'matches') {
+                        const el = document.querySelectorAll('#gameMatches .search-result')[focusIndex];
+                        if (el) el.click();
+                    } else {
                         const items = document.querySelectorAll('#results .grid-item');
                         if (items[focusIndex]) items[focusIndex].click();
                     }

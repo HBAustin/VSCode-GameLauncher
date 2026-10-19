@@ -276,11 +276,27 @@ ipcMain.on('show-game-context-menu', (event, gameData) => {
 
 function openPickerWindow(gameData, type) {
     if (pickerWin && !pickerWin.isDestroyed()) { pickerWin.focus(); return; }
-    pickerWin = new BrowserWindow({
-        width: 800, height: 900, parent: win || undefined, modal: false,
-        backgroundColor: '#1a1a1a',
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+
+    // Same window treatment as the main launcher: hidden title bar, native glass, no menu bar.
+    pickerWin = new BrowserWindow(glass.windowOptions({
+        width: 860, height: 900, minWidth: 560, minHeight: 520,
+        parent: win || undefined, modal: false,
+        title: 'Select Artwork',
+        autoHideMenuBar: true,
+        titleBarStyle: isMac ? 'hiddenInset' : isWin ? 'hidden' : 'default',
+        titleBarOverlay: isWin ? {
+            color: '#00000000',
+            symbolColor: '#ffffff',
+            height: 38
+        } : false,
+        trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+        backgroundColor: '#00000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false }
-    });
+    }));
+    pickerWin.setMenuBarVisibility(false);
+    glass.attach(pickerWin);
     pickerWin.loadFile('picker.html');
     pickerWin.on('closed', () => { pickerWin = null; });
     pickerWin.webContents.once('did-finish-load', () => {
