@@ -41,9 +41,9 @@ function createWindow() {
         titleBarOverlay: isWin ? {
             color: '#00000000',
             symbolColor: '#ffffff',
-            height: 38
+            height: 72 // matches the Modern top bar (56px) + its 16px top padding, so the window buttons line up with it
         } : false,
-        trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+        trafficLightPosition: isMac ? { x: 20, y: 21 } : undefined,
         visualEffectState: isMac ? 'active' : undefined,
         backgroundColor: '#00000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
@@ -371,9 +371,16 @@ ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
             return { success: false, error: 'Steam Store details are unavailable for this title.' };
         }
 
+        // Steam category 28 = "Full controller support", 18 = "Partial Controller Support"
+        const categoryIds = (details.categories || []).map(category => category.id);
+        const controllerSupport = details.controller_support === 'full' || categoryIds.includes(28)
+            ? 'full'
+            : categoryIds.includes(18) ? 'partial' : 'none';
+
         return {
             success: true,
             appId,
+            controllerSupport,
             title: details.name || exactMatch.name,
             genres: (details.genres || []).map(genre => genre.description).filter(Boolean),
             screenshots: (details.screenshots || []).slice(0, 12).map(s => s.path_full).filter(Boolean),

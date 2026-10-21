@@ -1026,7 +1026,8 @@ function loadSteamMedia(selectedId) {
     if (screenshotsSection.dataset.requestKey === requestKey) return;
     screenshotsSection.dataset.requestKey = requestKey;
 
-    if (game.steamMedia?.query === game.name) {
+    // Older cached entries have no controller data yet, so fetch them once more
+    if (game.steamMedia?.query === game.name && game.steamMedia.controllerSupport !== undefined) {
         renderSteamMedia(selectedId, game.steamMedia);
         return;
     }
@@ -1046,6 +1047,7 @@ function loadSteamMedia(selectedId) {
             query: game.name,
             success: true,
             appId: result.appId,
+            controllerSupport: result.controllerSupport || 'none',
             genres: result.genres || [],
             screenshots: result.screenshots || [],
             recommendations: parseSteamRecommendations(result.recommendationsHtml)

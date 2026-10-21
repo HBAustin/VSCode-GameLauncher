@@ -4,13 +4,14 @@
    Loaded LAST on purpose, so it can refine modern.css / modern-dialogs.css.
      1. Compact list rows (both styles): more games on screen
      2. Resizable game list (drag the divider), collapsing to an icon rail
-     3. Corner radius that matches the operating system (Modern)
+     3. Library pane: heading above the list
+     4. Corner radius that matches the operating system (Modern)
    ========================================================================== */
 
 
 /* ==========================================================================
-   1. COMPACT LIST ROWS
-   (Modern rows are sized in modern.css; this covers Classic.)
+   1. COMPACT LIST ROWS (Steam-sized)
+   (Modern rows are sized in modern.css; this covers Minimal.)
    ========================================================================== */
 :root { --card-gap: 1px; }
 .content-wrapper.list-mode .game-card { height: 30px; padding: 3px 8px; gap: 10px; }
@@ -63,8 +64,12 @@ body.is-resizing .splitter::after {
 body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none !important; }
 body.is-resizing .game-card { transition: none !important; }
 
-/* Library pane: a fixed heading above the scrolling list (ui.js builds the pane and heading) */
-.library-pane { display: contents; }   /* Full Screen grid: the pane is transparent to layout */
+
+/* ==========================================================================
+   3. LIBRARY PANE: a fixed heading above the scrolling list
+   ui.js builds the pane, the heading (.lh-title + .lh-sort) and moves #library into it.
+   ========================================================================== */
+.library-pane { display: contents; }
 .library-heading { display: none; }
 
 .content-wrapper.list-mode .library-pane {
@@ -81,7 +86,10 @@ body.is-resizing .game-card { transition: none !important; }
     -webkit-app-region: no-drag;
 }
 .content-wrapper.list-mode .library-heading {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     flex: none;
     padding: 10px 14px 8px;
     font-size: 0.68rem;
@@ -89,10 +97,9 @@ body.is-resizing .game-card { transition: none !important; }
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
+.lh-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lh-sort { flex: none; }
 .content-wrapper.list-mode .library-pane > #library {
     width: 100%;
     height: auto;
@@ -100,24 +107,19 @@ body.is-resizing .game-card { transition: none !important; }
     min-height: 0;
 }
 
-/* Modern: the pane is the glass panel and the list inside it is plain */
-html[data-ui="modern"] .content-wrapper.list-mode .library-pane {
-    border-radius: 26px;
-    background: rgba(10, 10, 14, 0.38);
-    border: 1px solid var(--stroke);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+/* Full Screen (grid): the pane is a column with the heading row above the poster wall */
+.content-wrapper.grid-mode .library-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    gap: 10px;
 }
-html[data-ui="modern"] .content-wrapper.list-mode .library-heading {
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid var(--stroke);
-}
-html:root[data-ui="modern"] .content-wrapper.list-mode .library-pane > #library {
-    padding: 6px 8px 8px;
-    background: none;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-}
+.content-wrapper.grid-mode .library-heading { display: none; } /* Minimal keeps Sort in its header */
+html:root body .content-wrapper.grid-mode .library-pane > #library { flex: 1 1 auto; height: auto; min-height: 0; }
+.full-screen-preview .content-wrapper.grid-mode .library-pane { display: none; }
 
 /* Rail: when the list is dragged narrow, rows collapse to just their icons */
 @container lib (max-width: 126px) {
@@ -134,7 +136,7 @@ html:root[data-ui="modern"] .content-wrapper.list-mode .library-pane > #library 
 
 
 /* ==========================================================================
-   3. SYSTEM CORNER RADIUS (Modern)
+   4. SYSTEM CORNER RADIUS (Modern)
    Windows 11 uses 8px for windows, flyouts and dialogs and 4px for controls and list rows
    (Microsoft's geometry guidance). macOS draws 10px windows, 26px on macOS 26 and a fixed
    20px on macOS 27. data-os is set before first paint by the script in <head>.
@@ -147,7 +149,8 @@ html[data-os="mac"]   { --os-radius: 10px; }
 html[data-os="mac26"] { --os-radius: 26px; }
 html[data-os="mac27"] { --os-radius: 20px; }
 
-/* Concentric scale: containers use the OS radius, things nested inside use less, never below 4px */
+/* Concentric scale: containers use the OS radius, things nested inside use less, never below 4px.
+   modern.css reads these as var(--r-1, <soft value>), so "soft" corners simply leave them undefined. */
 html[data-corners="system"][data-ui="modern"] {
     --r-1: var(--os-radius);                              /* windows, panels, menus, dialogs */
     --r-2: max(calc(var(--os-radius) - 8px), 4px);        /* rows, cards, groups one level in */
@@ -158,41 +161,23 @@ html[data-corners="system"][data-ui="modern"] {
     --radius-sm: var(--r-3);
 }
 
-/* Containers */
-html[data-corners="system"][data-ui="modern"] .header,
-html[data-corners="system"][data-ui="modern"] .content-wrapper.list-mode .library-pane,
-html[data-corners="system"][data-ui="modern"] #detail-panel,
-html[data-corners="system"][data-ui="modern"] .dp-action-row,
+/* Dialogs, menus and settings (styled in modern-dialogs.css and index.html with fixed radii) */
 html[data-corners="system"][data-ui="modern"] .modal-content,
 html[data-corners="system"][data-ui="modern"] #settingsModal .settings-modal-content,
 html[data-corners="system"][data-ui="modern"] #contextModal .modal-content,
 html[data-corners="system"][data-ui="modern"] #customizeModal .artwork-modal-content,
 html[data-corners="system"][data-ui="modern"] .ctx-menu,
-html[data-corners="system"][data-ui="modern"] .footer,
-html[data-corners="system"][data-ui="modern"] body.glass-liquid .header,
-html[data-corners="system"][data-ui="modern"] body.glass-liquid #detail-panel,
-html[data-corners="system"][data-ui="modern"] .dp-empty::before { border-radius: var(--r-1); }
+html[data-corners="system"][data-ui="modern"] .footer { border-radius: var(--r-1); }
 
 html[data-corners="system"][data-ui="modern"] .ctx-head { border-radius: var(--r-2) var(--r-2) 0 0; }
 
-/* Rows and cards */
-html[data-corners="system"][data-ui="modern"] .content-wrapper.grid-mode .game-card,
-html[data-corners="system"][data-ui="modern"] .dp-screenshot,
-html[data-corners="system"][data-ui="modern"] .related-game-card,
 html[data-corners="system"][data-ui="modern"] .artwork-row,
 html[data-corners="system"][data-ui="modern"] .artwork-row[data-artwork-type="icon"] .artwork-preview,
 html[data-corners="system"][data-ui="modern"] .brand-setting,
 html[data-corners="system"][data-ui="modern"] .ctx-item,
 html[data-corners="system"][data-ui="modern"] #contextOptionsList .menu-btn { border-radius: var(--r-2); }
 
-/* Controls */
-html[data-corners="system"][data-ui="modern"] .header .controls #librarySearch,
-html[data-corners="system"][data-ui="modern"] .header .controls .sort-control select,
-html[data-corners="system"][data-ui="modern"] .header .controls .control-btn,
-html[data-corners="system"][data-ui="modern"] .brand-btn,
 html[data-corners="system"][data-ui="modern"] .brand-preview,
-html[data-corners="system"][data-ui="modern"] .dp-play-btn,
-html[data-corners="system"][data-ui="modern"] .dp-management-actions .dash-btn,
 html[data-corners="system"][data-ui="modern"] .menu-btn,
 html[data-corners="system"][data-ui="modern"] .settings-tab,
 html[data-corners="system"][data-ui="modern"] #closeSettingsBtn,
@@ -205,13 +190,8 @@ html[data-corners="system"][data-ui="modern"] .ui-style-switch,
 html[data-corners="system"][data-ui="modern"] .settings-mode-switch,
 html[data-corners="system"][data-ui="modern"] #customizeOptionsList > .menu-btn[data-action="cancel"] { border-radius: var(--r-3); }
 
-/* Nested one level further in */
 html[data-corners="system"][data-ui="modern"] .ui-style-switch span,
 html[data-corners="system"][data-ui="modern"] .settings-mode-option { border-radius: var(--r-4); }
-
-/* Small list rows and icons: cap the radius so Steam-sized rows never turn into pills */
-html[data-corners="system"][data-ui="modern"] .content-wrapper.list-mode .game-card { border-radius: min(var(--r-2), 8px); }
-html[data-corners="system"][data-ui="modern"] .list-thumb { border-radius: min(var(--r-3), 5px); }
 
 /* The corner-radius switch only matters in Modern */
 html[data-ui="classic"] #cornersRow { display: none; }

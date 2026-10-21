@@ -1,16 +1,18 @@
 /**
  * ui.js (renderer). Load AFTER renderer.js.
  * Helpers for the Modern interface. Nothing here touches your game data or renderer.js state.
- *   - Interface style switch (Modern / Classic), remembered between launches
+ *   - Builds the Modern layout (top bar, library header, bottom bar) by moving existing elements,
+ *     and puts them back for the Minimal style
+ *   - Interface style switch (Modern / Minimal), remembered between launches
  *   - Launcher logo button (user's own image) + menu
+ *   - Controller-support icon for the selected game
  *   - "Dynamic" theme: ambient backdrop and accent colour follow the selected game's artwork
- *   - Theme-aware surface colours for the Modern panels and menus
- *   - In-app right-click menu
- *   - Live "Library . N games" label, Ctrl/Cmd + K search shortcut
+ *   - Theme-aware surface colours, in-app right-click menu, resizable game list
  */
 (() => {
     const KEY = 'hb-ui';
     const BRAND_KEY = 'hb-brand';
+    const CTRL_KEY = 'hb-controller';
     const root = document.documentElement;
     const isMac = /Mac/.test(navigator.userAgent);
 
@@ -160,7 +162,7 @@
     function syncPlaceholder() {
         if (!search) return;
         search.placeholder = currentStyle() === 'modern'
-            ? `${basePlaceholder.replace(/\.*$/, '')}   ${isMac ? '\u2318K' : 'Ctrl K'}`
+            ? `Search library   ${isMac ? '\u2318K' : 'Ctrl K'}`
             : basePlaceholder;
     }
     window.addEventListener('keydown', (e) => {
@@ -172,19 +174,28 @@
     });
 
     // ======================================================================
-    // Library count label (CSS shows it via data-label)
+    // Library pane: a fixed heading (title + sort slot) above the scrolling list
     // ======================================================================
     const library = document.getElementById('library');
+    const wrapper = document.getElementById('contentWrapper');
+    const detail = document.getElementById('detail-panel');
 
-    // The list lives in a "pane" with a fixed heading above it, so the heading never scrolls under the rows.
     let pane = null;
     let heading = null;
+    let lhTitle = null;
+    let lhSort = null;
     if (library && library.parentElement) {
         pane = document.createElement('div');
         pane.className = 'library-pane';
         heading = document.createElement('div');
         heading.className = 'library-heading';
         heading.id = 'libraryHeading';
+        lhTitle = document.createElement('span');
+        lhTitle.className = 'lh-title';
+        lhSort = document.createElement('span');
+        lhSort.className = 'lh-sort';
+        lhSort.id = 'lhSort';
+        heading.append(lhTitle, lhSort);
         library.before(pane);
         pane.append(heading, library); // #library keeps its identity, so renderer.js is unaffected
     }
@@ -198,7 +209,7 @@
             const title = card.querySelector('.list-title');
             if (title && card.title !== title.textContent) card.title = title.textContent;
         });
-        if (heading) heading.textContent = `Library \u00b7 ${n} ${n === 1 ? 'game' : 'games'}`;
+        if (lhTitle) lhTitle.textContent = `Library \u00b7 ${n} ${n === 1 ? 'game' : 'games'}`;
     }
     if (library) {
         new MutationObserver(updateLabel).observe(library, { childList: true });
@@ -246,7 +257,7 @@
     }
 
     // ======================================================================
-    // Menus (shared by the right-click menu and the logo button)
+    // Menus (shared by the right-click menu, the logo button and the controller icon)
     // ======================================================================
     let menu = null; // { el, mark, abort, owner }
 
@@ -344,6 +355,7 @@
             } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 const list = [...el.querySelectorAll('.ctx-item')];
+                if (!list.length) return;
                 const i = list.indexOf(document.activeElement);
                 const next = e.key === 'ArrowDown' ? (i + 1) % list.length : (i <= 0 ? list.length - 1 : i - 1);
                 list[next].focus();
@@ -396,7 +408,7 @@
 
     // Capture phase on window: runs before renderer.js's own contextmenu handler.
     window.addEventListener('contextmenu', (e) => {
-        if (currentStyle() !== 'modern' || !ipc) return; // Classic keeps the native menu
+        if (currentStyle() !== 'modern' || !ipc) return; // Minimal keeps the native menu
         const card = e.target.closest ? e.target.closest('.game-card') : null;
         if (!card) { closeMenu(); return; }
         if (!openGameMenu(card.id, e.clientX, e.clientY, card)) return;
@@ -405,14 +417,14 @@
     }, true);
 
     // ======================================================================
-    // Launcher logo button (replaces the old fixed "HB" badge)
+    // Launcher logo button
     // ======================================================================
     const header = document.getElementById('appHeader');
     const brandBtn = document.createElement('button');
     brandBtn.type = 'button';
     brandBtn.id = 'brandBtn';
     brandBtn.className = 'brand-btn';
-    brandBtn.title = 'Launcher logo';
+    brandBtn.title = 'Launcher menu';
     brandBtn.setAttribute('aria-label', 'Launcher logo and menu');
     brandBtn.setAttribute('aria-haspopup', 'menu');
     if (header) header.prepend(brandBtn);
@@ -463,6 +475,7 @@
         applyBrand();
     }
 
+    const settingsBtn = document.getElementById('settingsBtn');
     brandBtn.addEventListener('click', () => {
         if (menu && menu.owner === 'brand') { closeMenu(); return; }
         const r = brandBtn.getBoundingClientRect();
@@ -472,23 +485,170 @@
             x: r.left,
             y: r.bottom + 8,
             ignore: brandBtn,
-            head: { title: 'Launcher logo', sub: hasImage ? 'Using your own image' : 'Use any image you like', image: getBrand() },
+            head: { title: 'Launcher', sub: hasImage ? 'Using your own logo' : 'Settings and logo', image: getBrand() },
             items: [
-                { action: 'brand-change', label: 'Change logo\u2026', run: chooseBrand },
-                ...(hasImage ? [{ action: 'brand-reset', label: 'Reset to default', run: resetBrand }] : []),
+                { action: 'brand-settings', label: 'Launcher settings', cls: 'primary', run: () => { if (settingsBtn) settingsBtn.click(); } },
                 'sep',
-                { action: 'brand-settings', label: 'Launcher settings', run: () => { const b = document.getElementById('settingsBtn'); if (b) b.click(); } },
+                { action: 'brand-change', label: 'Change logo\u2026', run: chooseBrand },
+                ...(hasImage ? [{ action: 'brand-reset', label: 'Reset logo', run: resetBrand }] : []),
             ],
         });
     });
 
     // ======================================================================
-    // Settings -> Look: interface style + launcher logo
+    // Layout: Modern moves elements into the new bars; Minimal puts them back
+    // ======================================================================
+    const controls = header ? header.querySelector('.controls') : null;
+    const sortControl = document.querySelector('.sort-control');
+    const fullBtn = document.getElementById('fullScreenBtn');
+    const addBtn = document.getElementById('addBtn');
+
+    const makeDiv = (cls, id) => {
+        const d = document.createElement('div');
+        d.className = cls;
+        d.id = id;
+        return d;
+    };
+    const topbarCard = makeDiv('topbar-card', 'topbarCard');
+    const topbarActions = makeDiv('topbar-actions', 'topbarActions');
+    const footerbar = makeDiv('footerbar', 'footerbar');
+
+    function enterModern() {
+        if (!header || !controls || !search) return;
+        const mac = /^mac/.test(root.dataset.os || '');
+        const fullList = fullBtn ? [fullBtn] : [];
+
+        // Insert the card first so it always lands to the left of topbarActions below,
+        // regardless of OS branch.
+        header.insertBefore(topbarCard, controls);
+
+        if (mac) {
+            // Traffic lights are on the left: search stretches, Full Screen and the logo go right
+            topbarCard.replaceChildren(search, ...fullList, brandBtn);
+            topbarActions.remove();
+        } else {
+            // Windows/Linux: logo + search card on the left, Full Screen on the right
+            topbarCard.replaceChildren(brandBtn, search);
+            topbarActions.replaceChildren(...fullList);
+            header.insertBefore(topbarActions, controls);
+        }
+
+        if (wrapper) wrapper.after(footerbar);
+        if (addBtn) footerbar.replaceChildren(addBtn);
+        if (lhSort && sortControl) lhSort.replaceChildren(sortControl);
+        if (settingsBtn) settingsBtn.style.display = 'none'; // Settings lives in the logo menu now
+        brandBtn.dataset.headerIdx = '5';                    // keep it reachable with a controller
+    }
+
+    function enterMinimal() {
+        if (!header || !controls) return;
+        controls.append(...[search, sortControl, fullBtn, addBtn, settingsBtn].filter(Boolean));
+        if (settingsBtn) settingsBtn.style.display = '';
+        brandBtn.removeAttribute('data-header-idx');
+        header.prepend(brandBtn);
+        topbarCard.remove();
+        topbarActions.remove();
+        footerbar.remove();
+    }
+
+    function applyLayout() {
+        if (currentStyle() === 'modern') enterModern();
+        else enterMinimal();
+    }
+
+    // Icon-only buttons need tooltips
+    if (fullBtn) {
+        const syncFull = () => { fullBtn.title = fullBtn.textContent.trim() || 'Full screen'; };
+        new MutationObserver(syncFull).observe(fullBtn, { childList: true, characterData: true, subtree: true });
+        syncFull();
+    }
+    if (addBtn) addBtn.title = 'Add a game';
+    const openFolderBtn = document.getElementById('dashBtnOpenFolder');
+    const changePathBtn = document.getElementById('dashBtnChangePath');
+    if (openFolderBtn) openFolderBtn.title = 'Browse files';
+    if (changePathBtn) changePathBtn.title = 'Change game path';
+
+    // ======================================================================
+    // Controller support icon (like Steam)
+    // Shown when Steam lists the selected game as supporting controllers AND a controller
+    // is connected or remembered from before.
+    // ======================================================================
+    const mgmt = document.querySelector('.dp-management-actions');
+    const ctrlBtn = document.createElement('button');
+    ctrlBtn.type = 'button';
+    ctrlBtn.id = 'dashControllerBtn';
+    ctrlBtn.className = 'dash-btn ctrl-btn';
+    ctrlBtn.hidden = true;
+    ctrlBtn.setAttribute('aria-label', 'Controller support');
+    if (mgmt) mgmt.prepend(ctrlBtn);
+
+    function controllerKind(id) {
+        const s = String(id || '').toLowerCase();
+        if (/dualsense|dualshock|playstation|wireless controller|054c/.test(s)) return 'PlayStation';
+        if (/xbox|xinput|microsoft|045e/.test(s)) return 'Xbox';
+        if (/switch|pro controller|nintendo|057e/.test(s)) return 'Switch';
+        return 'Generic';
+    }
+    function rememberController(id) {
+        try { localStorage.setItem(CTRL_KEY, controllerKind(id)); } catch (_) {}
+    }
+    function knownController() {
+        const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter((p) => p && p.connected) : [];
+        if (pads.length) {
+            rememberController(pads[0].id);
+            return { kind: controllerKind(pads[0].id), connected: true };
+        }
+        try {
+            const kind = localStorage.getItem(CTRL_KEY);
+            if (kind) return { kind, connected: false };
+        } catch (_) {}
+        return null;
+    }
+    window.addEventListener('gamepadconnected', (e) => { rememberController(e.gamepad.id); syncController(); });
+
+    let ctrlSig = '';
+    function syncController() {
+        const id = typeof selectedListId !== 'undefined' ? selectedListId : null;
+        const game = id && typeof gameData !== 'undefined' ? gameData[id] : null;
+        const support = game && game.steamMedia ? game.steamMedia.controllerSupport : undefined;
+        const ctrl = knownController();
+        const show = !!ctrl && (support === 'full' || support === 'partial');
+        const sig = [show, support, ctrl && ctrl.kind, ctrl && ctrl.connected].join('|');
+        if (sig === ctrlSig) return;
+        ctrlSig = sig;
+
+        ctrlBtn.hidden = !show;
+        if (!show) return;
+        ctrlBtn.dataset.level = support;
+        ctrlBtn.title = `${support === 'full' ? 'Full' : 'Partial'} controller support`;
+        ctrlBtn.dataset.kind = ctrl.kind;
+        ctrlBtn.dataset.connected = ctrl.connected ? '1' : '';
+    }
+    ctrlBtn.addEventListener('click', () => {
+        if (menu && menu.owner === 'ctrl') { closeMenu(); return; }
+        const level = ctrlBtn.dataset.level === 'full' ? 'Full' : 'Partial';
+        const r = ctrlBtn.getBoundingClientRect();
+        showMenu({
+            owner: 'ctrl',
+            x: r.left,
+            y: r.bottom + 8,
+            ignore: ctrlBtn,
+            head: {
+                title: `${level} controller support`,
+                sub: `Steam lists this game \u00b7 your ${ctrlBtn.dataset.kind || 'controller'} ${ctrlBtn.dataset.connected ? 'is connected' : 'was last used'}`,
+            },
+            items: [],
+        });
+    });
+    setInterval(syncController, 400);
+
+    // ======================================================================
+    // Settings -> Look: interface style + launcher logo + corners
     // ======================================================================
     function buildSettings() {
         const panel = document.getElementById('settingsAppearance');
         if (!panel || document.getElementById('uiStyleSection')) return;
-        const heading = panel.querySelector('h3');
+        const headingEl = panel.querySelector('h3');
         const html = `
             <div class="settings-group" id="uiStyleSection" style="margin: 0 0 20px">
                 <p class="settings-group-label">Interface style</p>
@@ -509,12 +669,12 @@
                 <p class="settings-group-label">Launcher logo</p>
                 <div class="brand-setting">
                     <span class="brand-preview" id="brandPreview"></span>
-                    <span class="brand-setting-text"><strong>Your logo</strong><span>Shown top-left. You can also click it there.</span></span>
+                    <span class="brand-setting-text"><strong>Your logo</strong><span>Shown in the top bar. You can also click it there.</span></span>
                     <button type="button" class="menu-btn" id="brandChange">Change</button>
                     <button type="button" class="menu-btn" id="brandReset">Reset</button>
                 </div>
             </div>`;
-        if (heading) heading.insertAdjacentHTML('afterend', html);
+        if (headingEl) headingEl.insertAdjacentHTML('afterend', html);
         else panel.insertAdjacentHTML('afterbegin', html);
 
         const hint = document.getElementById('uiStyleHint');
@@ -529,6 +689,8 @@
             radio.addEventListener('change', () => {
                 root.dataset.ui = radio.value;
                 try { localStorage.setItem(KEY, radio.value); } catch (_) {}
+                closeMenu();
+                applyLayout();
                 syncPlaceholder();
                 refresh();
             });
@@ -574,15 +736,10 @@
     }
 
     // ======================================================================
-    // Start
-    // ======================================================================
-    // ======================================================================
     // Resizable game list: drag the divider (double-click or Enter to reset)
     // ======================================================================
     const SPLIT_KEY = 'hb-sidebar-width';
     const MIN_SIDEBAR = 56; // icon rail
-    const wrapper = document.getElementById('contentWrapper');
-    const detail = document.getElementById('detail-panel');
     if (wrapper && library && detail) {
         const splitter = document.createElement('div');
         splitter.id = 'splitter';
@@ -654,11 +811,16 @@
         applyWidth();
     }
 
+    // ======================================================================
+    // Start
+    // ======================================================================
     root.dataset.ui = readStyle();
+    applyLayout();
     syncPlaceholder();
     buildSettings();
     applyBrand();
     syncTheme();
+    syncController();
     // Theme changes happen inside renderer.js with no event, so check cheaply a few times a second.
     setInterval(syncTheme, 300);
 })();
