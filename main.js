@@ -41,9 +41,9 @@ function createWindow() {
         titleBarOverlay: isWin ? {
             color: '#00000000',
             symbolColor: '#ffffff',
-            height: 72 // matches the Modern top bar (56px) + its 16px top padding, so the window buttons line up with it
+            height: 38
         } : false,
-        trafficLightPosition: isMac ? { x: 20, y: 21 } : undefined,
+        trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
         visualEffectState: isMac ? 'active' : undefined,
         backgroundColor: '#00000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
@@ -199,35 +199,9 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.on('launch-game-process', async (event, { id, executablePath }) => {
-    if (!executablePath) return;
-    try {
-        const isUri = /^[a-z][a-z\d+.-]*:\/\//i.test(executablePath);
-        const extension = path.extname(executablePath).toLowerCase();
-        const isMac = process.platform === 'darwin';
-        const isAppBundle = isMac && extension === '.app';
-        const usesWindowsLauncher = process.platform === 'win32' && (isUri || extension === '.lnk' || extension === '.url');
-
-        const child = isAppBundle
-            ? spawn('open', [executablePath], { detached: true, stdio: 'ignore' })
-            : usesWindowsLauncher
-                ? spawn('cmd.exe', ['/c', 'start', '', executablePath], {
-                    detached: true, stdio: 'ignore', windowsHide: true
-                })
-                : fs.existsSync(executablePath)
-                    ? spawn(executablePath, [], {
-                        cwd: path.dirname(executablePath),
-                        detached: true, stdio: 'ignore',
-                        windowsHide: process.platform === 'win32'
-                    })
-                    : null;
-
-        if (!child) return;
-        child.once('error', (err) => console.error('Failed to execute game instance:', err));
-        child.unref();
-    } catch (err) {
-        console.error("Failed to execute game instance:", err);
-    }
+const importer = require('./importer-main');
+ipcMain.on('launch-game-process', (event, { executablePath, options }) => {
+    importer.launch(executablePath, options, () => win);
 });
 
 ipcMain.handle('get-user-data-path', () => {
@@ -342,53 +316,137 @@ function normalizeSteamTitle(title) {
         .toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Windows: the renderer reports its top bar height so the native window buttons line up with it (titlebar.js)
+ipcMain.on('titlebar-height', (event, height) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    const h = Math.round(Number(height));
+    if (!w || process.platform !== 'win32' || typeof w.setTitleBarOverlay !== 'function' || !(h >= 28 && h <= 160)) return;
+    try { w.setTitleBarOverlay({ color: '#00000000', symbolColor: '#ffffff', height: h }); } catch (e) { /* window closing */ }
+});
+
+/* ---- Steam Store requests: polite by design --------------------------------------------------
+   Steam's CDN (Akamai) blocks an IP that sends too many requests ("Access Denied ... Reference #18...").
+   To stay under the limit this section:
+     - queues every request and spaces them out (STEAM_MIN_GAP_MS apart, one at a time)
+     - caches results on disk (hits for 14 days, "no match" for 1 day, errors for 10 minutes)
+     - shares one request between identical lookups that are in flight at the same time
+     - backs off completely after a 403/429 (STEAM_COOLDOWN_MS) and makes no requests until it ends  */
+const STEAM_MIN_GAP_MS = 1500;
+const STEAM_COOLDOWN_MS = 15 * 60 * 1000;
+const STEAM_TTL = { hit: 14 * 24 * 3600e3, miss: 24 * 3600e3, error: 10 * 60e3 };
+const STEAM_CACHE_FILE = path.join(app.getPath('userData'), 'steam-cache.json');
+const STEAM_HEADERS = { 'User-Agent': 'Mozilla/5.0 (HBLauncher) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' };
+
+let steamCache = {};
+try { steamCache = JSON.parse(fs.readFileSync(STEAM_CACHE_FILE, 'utf8')) || {}; } catch { steamCache = {}; }
+let steamCacheTimer = null;
+function saveSteamCache() {
+    clearTimeout(steamCacheTimer);
+    steamCacheTimer = setTimeout(() => {
+        const now = Date.now();
+        for (const k of Object.keys(steamCache)) if (steamCache[k].expires < now) delete steamCache[k];
+        fs.writeFile(STEAM_CACHE_FILE, JSON.stringify(steamCache), () => {});
+    }, 2000);
+}
+
+let steamBlockedUntil = 0;
+let steamQueue = Promise.resolve();
+let steamLastRequest = 0;
+const steamInFlight = new Map();
+
+function steamGet(url, config = {}) {
+    const run = async () => {
+        if (Date.now() < steamBlockedUntil) {
+            const err = new Error('Steam is rate-limiting this connection. Pausing requests for a few minutes.');
+            err.steamBlocked = true;
+            throw err;
+        }
+        const wait = steamLastRequest + STEAM_MIN_GAP_MS - Date.now();
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        steamLastRequest = Date.now();
+        try {
+            return await axios.get(url, { timeout: 15000, headers: STEAM_HEADERS, ...config });
+        } catch (err) {
+            const status = err.response?.status;
+            if (status === 403 || status === 429) {
+                steamBlockedUntil = Date.now() + STEAM_COOLDOWN_MS;
+                err.steamBlocked = true;
+                err.message = 'Steam is rate-limiting this connection. Pausing requests for a few minutes.';
+            }
+            throw err;
+        }
+    };
+    const result = steamQueue.then(run, run);
+    steamQueue = result.catch(() => {});
+    return result;
+}
+
+async function lookupSteamMedia(gameTitle, normalizedTitle) {
+    const searchResponse = await steamGet('https://store.steampowered.com/api/storesearch/', {
+        params: { term: gameTitle, l: 'english', cc: 'US' }
+    });
+    const exactMatch = searchResponse.data?.items?.find(
+        item => normalizeSteamTitle(item.name) === normalizedTitle
+    );
+    if (!exactMatch) return { success: false, miss: true, error: 'No exact Steam Store title match was found.' };
+
+    const appId = String(exactMatch.id);
+    const detailsResponse = await steamGet('https://store.steampowered.com/api/appdetails', {
+        params: { appids: appId, cc: 'US', l: 'en' }
+    });
+    const details = detailsResponse.data?.[appId]?.data;
+    if (!detailsResponse.data?.[appId]?.success || !details) {
+        return { success: false, miss: true, error: 'Steam Store details are unavailable for this title.' };
+    }
+
+    // "More like this" is optional; skip it quietly if Steam objects
+    let recommendationsHtml = '';
+    try {
+        recommendationsHtml = (await steamGet(`https://store.steampowered.com/recommended/morelike/app/${appId}/`, {
+            params: { cc: 'US', l: 'en' }
+        })).data || '';
+    } catch (err) { if (err.steamBlocked) recommendationsHtml = ''; }
+
+    return {
+        success: true,
+        appId,
+        title: details.name || exactMatch.name,
+        genres: (details.genres || []).map(genre => genre.description).filter(Boolean),
+        screenshots: (details.screenshots || []).slice(0, 12).map(s => s.path_full).filter(Boolean),
+        recommendationsHtml
+    };
+}
+
 ipcMain.handle('get-steam-game-media', async (event, gameTitle) => {
     const normalizedTitle = normalizeSteamTitle(gameTitle);
     if (!normalizedTitle) return { success: false, error: 'A game title is required.' };
 
-    try {
-        const searchResponse = await axios.get('https://store.steampowered.com/api/storesearch/', {
-            params: { term: gameTitle, l: 'english', cc: 'US' },
-            timeout: 15000
-        });
-        const exactMatch = searchResponse.data?.items?.find(
-            item => normalizeSteamTitle(item.name) === normalizedTitle
-        );
-        if (!exactMatch) return { success: false, error: 'No exact Steam Store title match was found.' };
-
-        const appId = String(exactMatch.id);
-        const [detailsResponse, recommendationsResponse] = await Promise.all([
-            axios.get('https://store.steampowered.com/api/appdetails', {
-                params: { appids: appId, cc: 'US', l: 'en' }, timeout: 15000
-            }),
-            axios.get(`https://store.steampowered.com/recommended/morelike/app/${appId}/`, {
-                params: { cc: 'US', l: 'en' }, timeout: 15000
-            }).catch(() => ({ data: '' }))
-        ]);
-
-        const details = detailsResponse.data?.[appId]?.data;
-        if (!detailsResponse.data?.[appId]?.success || !details) {
-            return { success: false, error: 'Steam Store details are unavailable for this title.' };
-        }
-
-        // Steam category 28 = "Full controller support", 18 = "Partial Controller Support"
-        const categoryIds = (details.categories || []).map(category => category.id);
-        const controllerSupport = details.controller_support === 'full' || categoryIds.includes(28)
-            ? 'full'
-            : categoryIds.includes(18) ? 'partial' : 'none';
-
-        return {
-            success: true,
-            appId,
-            controllerSupport,
-            title: details.name || exactMatch.name,
-            genres: (details.genres || []).map(genre => genre.description).filter(Boolean),
-            screenshots: (details.screenshots || []).slice(0, 12).map(s => s.path_full).filter(Boolean),
-            recommendationsHtml: recommendationsResponse.data || ''
-        };
-    } catch (err) {
-        return { success: false, error: err.message };
+    const cached = steamCache[normalizedTitle];
+    if (cached && cached.expires > Date.now()) return cached.value;
+    if (Date.now() < steamBlockedUntil) {
+        return { success: false, error: 'Steam is rate-limiting this connection. Pausing requests for a few minutes.' };
     }
+
+    if (steamInFlight.has(normalizedTitle)) return steamInFlight.get(normalizedTitle);
+    const job = (async () => {
+        try {
+            const value = await lookupSteamMedia(gameTitle, normalizedTitle);
+            const ttl = value.success ? STEAM_TTL.hit : STEAM_TTL.miss;
+            steamCache[normalizedTitle] = { expires: Date.now() + ttl, value };
+            saveSteamCache();
+            return value;
+        } catch (err) {
+            if (!err.steamBlocked) {
+                steamCache[normalizedTitle] = { expires: Date.now() + STEAM_TTL.error, value: { success: false, error: err.message } };
+                saveSteamCache();
+            }
+            return { success: false, error: err.message };
+        } finally {
+            steamInFlight.delete(normalizedTitle);
+        }
+    })();
+    steamInFlight.set(normalizedTitle, job);
+    return job;
 });
 
 ipcMain.on('open-steam-game', (event, appId) => {
@@ -637,5 +695,9 @@ ipcMain.handle('select-game', async () => {
 });
 
 ipcMain.on('open-file-location', (event, filePath) => {
-    if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    if (fs.statSync(filePath).isDirectory()) shell.openPath(filePath);   // imported games point at their install folder
+    else shell.showItemInFolder(filePath);
 });
+
+importer.register({ ipcMain, app, getWin: () => win, loadSettings, fetchSteamGridArtwork });

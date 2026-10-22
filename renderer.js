@@ -650,7 +650,7 @@ const launchItem = (id) => {
         gameData[id].lastPlayed = Date.now();
         saveToDisk(); 
         document.getElementById('dashLastPlayed').innerText = formatLastPlayed(gameData[id].lastPlayed);
-        ipcRenderer.send('launch-game-process', { id, executablePath: gameData[id].path }); 
+        ipcRenderer.send('launch-game-process', { id, executablePath: gameData[id].path, options: gameData[id].launch }); 
     }
 };
 
@@ -1016,6 +1016,9 @@ function renderSteamMedia(selectedId, media) {
     });
 }
 
+const steamMediaFailures = new Map();
+let steamMediaTimer = null;
+
 function loadSteamMedia(selectedId) {
     const game = gameData[selectedId];
     const screenshotsSection = document.getElementById('dpScreenshots');
@@ -1026,19 +1029,35 @@ function loadSteamMedia(selectedId) {
     if (screenshotsSection.dataset.requestKey === requestKey) return;
     screenshotsSection.dataset.requestKey = requestKey;
 
-    // Older cached entries have no controller data yet, so fetch them once more
-    if (game.steamMedia?.query === game.name && game.steamMedia.controllerSupport !== undefined) {
+    if (game.steamMedia?.query === game.name) {
         renderSteamMedia(selectedId, game.steamMedia);
         return;
     }
 
     const requestId = ++steamMediaRequestId;
-    const loadingMedia = { loading: true };
-    renderSteamMedia(selectedId, loadingMedia);
+    renderSteamMedia(selectedId, { loading: true });
+
+    // A recent failure for this title: show it again instead of asking Steam again
+    const failed = steamMediaFailures.get(game.name);
+    if (failed && Date.now() - failed.at < 10 * 60 * 1000) {
+        renderSteamMedia(selectedId, { error: failed.error });
+        return;
+    }
+
+    // Wait for the selection to settle, so scrolling through the list doesn't send a lookup per row
+    clearTimeout(steamMediaTimer);
+    steamMediaTimer = setTimeout(() => {
+        if (requestId !== steamMediaRequestId || selectedListId !== selectedId) return;
+        requestSteamMedia(selectedId, game, requestId);
+    }, 500);
+}
+
+function requestSteamMedia(selectedId, game, requestId) {
     ipcRenderer.invoke('get-steam-game-media', game.name).then((result) => {
         if (requestId !== steamMediaRequestId || selectedListId !== selectedId) return;
 
         if (!result.success) {
+            steamMediaFailures.set(game.name, { at: Date.now(), error: result.error });
             renderSteamMedia(selectedId, { error: result.error });
             return;
         }
@@ -1047,7 +1066,6 @@ function loadSteamMedia(selectedId) {
             query: game.name,
             success: true,
             appId: result.appId,
-            controllerSupport: result.controllerSupport || 'none',
             genres: result.genres || [],
             screenshots: result.screenshots || [],
             recommendations: parseSteamRecommendations(result.recommendationsHtml)
@@ -1124,7 +1142,7 @@ const selectListItem = (id) => {
 
     document.getElementById('dashLastPlayed').innerText = formatLastPlayed(d.lastPlayed);
 
-    document.getElementById('dashBtnOpenFolder').onclick = () => ipcRenderer.send('open-file-location', d.path);
+    document.getElementById('dashBtnOpenFolder').onclick = () => ipcRenderer.send('open-file-location', d.folder || d.path);
     document.getElementById('dashBtnChangePath').onclick = async () => {
         currentEditingId = id;
         executeAction('change-path');
@@ -1288,7 +1306,7 @@ async function executeAction(action) {
             updateCustomizePreviews(gObj);
             openModal('customize'); 
         },
-        'open-file-location': () => { if (gObj.path) ipcRenderer.send('open-file-location', gObj.path); closeModal(); },
+        'open-file-location': () => { if (gObj.folder || gObj.path) ipcRenderer.send('open-file-location', gObj.folder || gObj.path); closeModal(); },
         'change-path': async () => { 
             const newPath = await ipcRenderer.invoke('select-game'); 
             if (newPath) { 
@@ -1368,10 +1386,12 @@ document.getElementById('renameInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleRenameSave(); else if (e.key === 'Escape') closeModal();
 });
 
-function addGameToLibrary({ id, name, path, cover, icon, logo, background }) {
+function addGameToLibrary({ id, name, path, cover, icon, logo, background, folder = '', source = '' }) {
     gameData[id] = {
         name,
         path,
+        folder,
+        source,
         favorite: false,
         cover,
         icon,
