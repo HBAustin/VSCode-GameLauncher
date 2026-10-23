@@ -1485,6 +1485,17 @@ function updateGlyphs(gamepadId) {
     }
 }
 
+// Controller order on the game page: Play, then the icon buttons as they appear on screen (left to right)
+const detailButtons = () => [
+    document.getElementById('dpPlayBtn'),
+    ...[...document.querySelectorAll('.dp-management-actions .dash-btn')]
+        .filter((b) => !b.hidden && b.offsetParent !== null)
+        .sort((a, b) => {
+            const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+            return Math.abs(ra.top - rb.top) > 8 ? ra.top - rb.top : ra.left - rb.left;
+        })
+];
+
 function applyFocus() {
     if (!isControllerMode) return;
 
@@ -1547,9 +1558,9 @@ function applyFocus() {
         }
     }
     else if (currentZone === 'detail-panel') {
-        if (dashFocusIndex === 0) document.getElementById('dpPlayBtn').classList.add('focused');
-        else if (dashFocusIndex === 1) document.getElementById('dashBtnOpenFolder').classList.add('focused');
-        else if (dashFocusIndex === 2) document.getElementById('dashBtnChangePath').classList.add('focused');
+        const btns = detailButtons();
+        dashFocusIndex = Math.max(0, Math.min(dashFocusIndex, btns.length - 1));
+        btns[dashFocusIndex].classList.add('focused');
     }
 }
 
@@ -1658,13 +1669,12 @@ function handleGamepadLoop() {
                 if (left && viewMode === 'grid') { if (focusIndex > 0) { focusIndex--; moved = true; } }
             }
             else if (currentZone === 'detail-panel') {
-                if (left && dashFocusIndex === 2) { dashFocusIndex = 1; moved = true; }
-                else if (left && dashFocusIndex === 1) { dashFocusIndex = 0; moved = true; }
+                const lastDetail = detailButtons().length - 1;
+                if (left && dashFocusIndex > 0) { dashFocusIndex--; moved = true; }
                 else if (left && dashFocusIndex === 0 && !isFullScreenPreviewActive) { currentZone = 'library'; moved = true; }
-                if (right && dashFocusIndex === 0) { dashFocusIndex = 1; moved = true; }
-                else if (right && dashFocusIndex === 1) { dashFocusIndex = 2; moved = true; }
-                if (down && dashFocusIndex === 0) { dashFocusIndex = 1; moved = true; }
-                if (up && (dashFocusIndex === 1 || dashFocusIndex === 2)) { dashFocusIndex = 0; moved = true; }
+                if (right && dashFocusIndex < lastDetail) { dashFocusIndex++; moved = true; }
+                if (down && dashFocusIndex === 0 && lastDetail > 0) { dashFocusIndex = 1; moved = true; }
+                if (up && dashFocusIndex > 0) { dashFocusIndex = 0; moved = true; }
             }
 
             if (moved) { applyFocus(); lastMoveTime = now; }
@@ -1714,9 +1724,8 @@ function handleGamepadLoop() {
                 else launchItem(selectedId);
             }
             else if (currentZone === 'detail-panel') {
-                if (dashFocusIndex === 0) document.getElementById('dpPlayBtn').click();
-                if (dashFocusIndex === 1) document.getElementById('dashBtnOpenFolder').click();
-                if (dashFocusIndex === 2) document.getElementById('dashBtnChangePath').click();
+                const pressed = detailButtons()[dashFocusIndex];
+                if (pressed) pressed.click();
             }
         }
 
