@@ -208,7 +208,7 @@ html[data-ui="modern"] #topbarActions {
     margin-left: auto;
 }
 /* Windows draws its own window buttons over the top-right corner */
-html[data-os^="win"][data-ui="modern"] #topbarActions { padding-right: 132px; }
+html[data-os^="win"][data-ui="modern"] #topbarActions { padding-right: 0; }
 
 /* macOS: traffic lights sit inside the bar on the left; search stretches; Full Screen + logo on the right */
 html[data-os^="mac"][data-ui="modern"] #topbarCard { flex: 1; width: auto; padding-left: 80px; }
@@ -271,10 +271,11 @@ html[data-ui="modern"] #topbarCard #librarySearch:focus {
 
 /* Full Screen (icon only; renderer.js still changes its text, which is hidden) */
 html[data-ui="modern"] #fullScreenBtn {
-    position: relative;
+    position: absolute;
+    left: 335px;
     flex: none;
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     font-size: 0;
     color: var(--header-text);
@@ -289,8 +290,8 @@ html[data-ui="modern"] #fullScreenBtn::before {
     position: absolute;
     inset: 0;
     margin: auto;
-    width: 18px;
-    height: 18px;
+    width: 35px;
+    height: 35px;
     background: currentColor;
     -webkit-mask: var(--ico-expand) center / contain no-repeat;
     mask: var(--ico-expand) center / contain no-repeat;
