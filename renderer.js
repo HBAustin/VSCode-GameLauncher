@@ -43,6 +43,278 @@ let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
+let steamInstallStates = {};
+const libraryFilter = (() => {
+    try { return localStorage.getItem('hb-library-filter') === 'installed' ? 'installed' : 'all'; }
+    catch (_) { return 'all'; }
+})();
+document.documentElement.dataset.libraryFilter = libraryFilter;
+
+function steamAppIdForGame(game) {
+    if (!game) return '';
+    const pathMatch = String(game.path || '').match(/^steam:\/\/(?:rungameid|run)\/(\d+)/i);
+    const appId = game.steamAppId || game.steamMedia?.appId || game.launch?.steamAppId || pathMatch?.[1] || '';
+    return /^\d+$/.test(String(appId)) ? String(appId) : '';
+}
+
+function isSteamOwnedGame(game) {
+    return !!game && (!!game.steamOwned || String(game.source || '').toLowerCase() === 'steam'
+        || /^steam:\/\/(?:rungameid|run)\//i.test(String(game.path || ''))
+        || (game.steamMedia?.appId && /[\\/]steamapps[\\/]common[\\/]/i.test(String(game.path || ''))));
+}
+
+function gameLauncher(game) {
+    const source = String(game?.source || '').trim().toLowerCase();
+    if (game?.epicLibrarySynced || source === 'epic' || String(game?.path || '').startsWith('epic://')) return 'epic';
+    if (isSteamOwnedGame(game) || source === 'steam') return 'steam';
+    if (source === 'gog') return 'gog';
+    return 'other';
+}
+
+function isGameInstalled(game) {
+    const appId = steamAppIdForGame(game);
+    if (appId && isSteamOwnedGame(game)) return steamInstallStates[appId]?.installed === true;
+    if (game?.epicLibrarySynced) return game.epicInstalled === true;
+
+    const target = String(game?.folder || game?.path || '');
+    if (!target) return false;
+    if (/^[a-z][a-z\d+.-]*:\/\//i.test(target)) return true;
+    try { return fs.existsSync(target); }
+    catch (error) {
+        console.warn(`Could not check installation for "${game.name}":`, error);
+        return false;
+    }
+}
+
+function matchesLibraryFilters(game, query, installedOnly, launcherFilter) {
+    return (!query || String(game?.name || '').toLowerCase().includes(query))
+        && (!installedOnly || isGameInstalled(game))
+        && (launcherFilter === 'all' || gameLauncher(game) === launcherFilter);
+}
+
+function updatePlayButton(game) {
+    const button = document.getElementById('dpPlayBtn');
+    if (!button) return;
+    const label = button.querySelector('span:last-child');
+    if (game?.epicLibrarySynced) {
+        if (label) label.textContent = game.epicInstalling ? 'INSTALLING' : game.epicInstalled ? 'PLAY' : 'INSTALL';
+        button.disabled = !!game.epicInstalling;
+        return;
+    }
+    const appId = steamAppIdForGame(game);
+    if (!appId || !isSteamOwnedGame(game)) {
+        if (label) label.textContent = 'PLAY';
+        button.disabled = false;
+        return;
+    }
+
+    const state = steamInstallStates[appId];
+    if (state?.installed) {
+        if (label) label.textContent = 'PLAY';
+        button.disabled = false;
+    } else if (state?.present) {
+        if (label) label.textContent = 'INSTALLING';
+        button.disabled = true;
+    } else {
+        if (label) label.textContent = 'INSTALL';
+        button.disabled = false;
+    }
+}
+
+function ensureSelectedGameVisible() {
+    if (!selectedListId || sortedIds.includes(selectedListId)) return;
+    if (sortedIds.length) {
+        selectListItem(sortedIds[0]);
+    } else {
+        selectedListId = null;
+        localStorage.removeItem('hb-last-selected');
+        document.dispatchEvent(new Event('hb-game-selected'));
+        document.getElementById('dp-content-state').style.display = 'none';
+        document.getElementById('dp-empty-state').style.display = 'flex';
+    }
+}
+
+document.addEventListener('hb-steam-status-updated', (event) => {
+    steamInstallStates = event.detail || {};
+    if (document.documentElement.dataset.libraryFilter === 'installed') {
+        renderLibrary();
+        ensureSelectedGameVisible();
+    } else {
+        Object.keys(gameData).forEach((id) => {
+            const card = document.getElementById(id);
+            if (card) card.classList.toggle('not-installed', !isGameInstalled(gameData[id]));
+        });
+    }
+    if (selectedListId && gameData[selectedListId]) updatePlayButton(gameData[selectedListId]);
+});
+ipcRenderer.on('epic-game-action-result', (event, detail) => {
+    document.dispatchEvent(new CustomEvent('epic-game-action-result', { detail }));
+});
+
+document.addEventListener('hb-library-filter-changed', () => {
+    renderLibrary();
+    ensureSelectedGameVisible();
+});
+
+document.addEventListener('epic-game-action-result', (event) => {
+    const { action, appName, success, error } = event.detail || {};
+    const game = Object.values(gameData).find(item => item?.epicAppName === appName);
+    if (game) {
+        game.epicInstalling = false;
+        if (action === 'install' && success) game.epicInstalled = true;
+        saveToDisk();
+        renderLibrary();
+        ensureSelectedGameVisible();
+        if (selectedListId && gameData[selectedListId]) updatePlayButton(gameData[selectedListId]);
+    }
+    const status = document.getElementById('epicSyncStatus');
+    if (!success) {
+        console.error(`Epic ${action || 'game'} action failed:`, error);
+        if (status) status.textContent = error || `Epic ${action || 'game'} action failed.`;
+        alert(error || `Epic ${action || 'game'} action failed.`);
+        return;
+    }
+    if (status) status.textContent = action === 'install' ? 'Epic installation finished.' : 'Epic game launched.';
+});
+
+function normalizeSteamName(name) {
+    return String(name || '').replace(/[\u2122\u00ae\u00a9]/g, '').normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        .replace(/(deluxeedition|standardedition|ultimateedition|completeedition|gameoftheyearedition|goty)$/, '');
+}
+
+function mergeSteamLibrary(games) {
+    const byAppId = new Map();
+    const byName = new Map();
+    for (const [id, game] of Object.entries(gameData)) {
+        const appId = steamAppIdForGame(game);
+        if (appId && !byAppId.has(appId)) byAppId.set(appId, id);
+        const name = normalizeSteamName(game?.name);
+        if (name && !byName.has(name)) byName.set(name, id);
+    }
+
+    let added = 0;
+    let linked = 0;
+    for (const steamGame of games) {
+        const appId = String(steamGame.appId);
+        const gameName = String(steamGame.name || '').trim();
+        if (!/^\d+$/.test(appId) || !gameName) continue;
+
+        const titleMatchId = byName.get(normalizeSteamName(gameName));
+        const titleMatch = gameData[titleMatchId];
+        const titleMatchAppId = steamAppIdForGame(titleMatch);
+        const foreignStore = titleMatch && titleMatch.source
+            && String(titleMatch.source).toLowerCase() !== 'steam';
+        const existingId = byAppId.get(appId)
+            || (titleMatchId && !foreignStore && (!titleMatchAppId || titleMatchAppId === appId) ? titleMatchId : null);
+        if (existingId) {
+            const existing = gameData[existingId];
+            existing.steamAppId = appId;
+            existing.steamOwned = true;
+            existing.steamLibrarySynced = true;
+            existing.source ||= 'Steam';
+            existing.path ||= `steam://rungameid/${appId}`;
+            existing.cover ||= `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
+            existing.background ||= `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg`;
+            if (!existing.icon && steamGame.iconHash) {
+                existing.icon = `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/${steamGame.iconHash}.jpg`;
+            }
+            byAppId.set(appId, existingId);
+            byName.set(normalizeSteamName(gameName), existingId);
+            linked++;
+            continue;
+        }
+
+        let id = `steam-${appId}`;
+        let suffix = 1;
+        while (Object.prototype.hasOwnProperty.call(gameData, id)) id = `steam-${appId}-${suffix++}`;
+        gameData[id] = {
+            name: gameName,
+            path: `steam://rungameid/${appId}`,
+            source: 'Steam',
+            steamAppId: appId,
+            steamOwned: true,
+            steamLibrarySynced: true,
+            cover: `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`,
+            background: `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/header.jpg`,
+            icon: steamGame.iconHash
+                ? `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/${steamGame.iconHash}.jpg`
+                : ''
+        };
+        byAppId.set(appId, id);
+        byName.set(normalizeSteamName(gameName), id);
+        added++;
+    }
+    saveToDisk();
+    renderLibrary();
+    if (selectedListId && gameData[selectedListId]) selectListItem(selectedListId);
+    document.dispatchEvent(new Event('hb-library-loaded'));
+    return { added, linked };
+}
+
+function mergeEpicLibrary(games) {
+    const byAppName = new Map();
+    const byName = new Map();
+    for (const [id, game] of Object.entries(gameData)) {
+        if (game?.epicAppName) byAppName.set(game.epicAppName.toLowerCase(), id);
+        else if (String(game?.source || '').toLowerCase() === 'epic' && !game.epicLibrarySynced) {
+            const name = normalizeSteamName(game.name);
+            if (name && !byName.has(name)) byName.set(name, id);
+        }
+    }
+
+    let added = 0;
+    let linked = 0;
+    for (const epicGame of games) {
+        const appName = String(epicGame.appName || '');
+        const name = String(epicGame.name || '').trim();
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(appName) || !name) continue;
+
+        const nameKey = normalizeSteamName(name);
+        const existingId = byAppName.get(appName.toLowerCase()) || byName.get(nameKey);
+        if (existingId) {
+            const existing = gameData[existingId];
+            byName.delete(nameKey);
+            existing.epicAppName = appName;
+            existing.epicLibrarySynced = true;
+            existing.epicInstalled = !!epicGame.installed;
+            existing.epicInstalling = !epicGame.installed && !!existing.epicInstalling;
+            existing.epicNamespace = epicGame.namespace || existing.epicNamespace || '';
+            existing.epicCatalogItemId = epicGame.catalogItemId || existing.epicCatalogItemId || '';
+            existing.source = 'Epic';
+            existing.path = `epic://app/${encodeURIComponent(appName)}`;
+            existing.cover ||= epicGame.cover || '';
+            existing.background ||= epicGame.background || '';
+            byAppName.set(appName.toLowerCase(), existingId);
+            linked++;
+            continue;
+        }
+
+        let id = `epic-${appName}`;
+        let suffix = 1;
+        while (Object.prototype.hasOwnProperty.call(gameData, id)) id = `epic-${appName}-${suffix++}`;
+        gameData[id] = {
+            name,
+            path: `epic://app/${encodeURIComponent(appName)}`,
+            source: 'Epic',
+            epicAppName: appName,
+            epicLibrarySynced: true,
+            epicInstalled: !!epicGame.installed,
+            epicNamespace: epicGame.namespace || '',
+            epicCatalogItemId: epicGame.catalogItemId || '',
+            cover: epicGame.cover || '',
+            background: epicGame.background || '',
+            icon: ''
+        };
+        byAppName.set(appName.toLowerCase(), id);
+        added++;
+    }
+    saveToDisk();
+    renderLibrary();
+    if (selectedListId && gameData[selectedListId]) selectListItem(selectedListId);
+    document.dispatchEvent(new Event('hb-library-loaded'));
+    return { added, linked };
+}
 
 async function loadLibrary() {
     try {
@@ -58,6 +330,9 @@ async function loadLibrary() {
         }
         Object.values(gameData).forEach(d => {
             if (d && typeof d === 'object') {
+                const appId = steamAppIdForGame(d);
+                if (appId && (d.steamOwned || String(d.source || '').toLowerCase() === 'steam'
+                    || /^steam:\/\/(?:rungameid|run)\//i.test(String(d.path || '')))) d.steamAppId = appId;
                 d.favorite ??= false;
                 d.background ??= '';
                 d.icon ??= '';
@@ -74,6 +349,7 @@ async function loadLibrary() {
         console.error('Error loading data file:', e);
     } finally {
         renderLibrary();
+        document.dispatchEvent(new Event('hb-library-loaded'));
     }
 }
 
@@ -89,6 +365,23 @@ function getArtworkPathsInUse(excludeId = null) {
         .filter(Boolean);
 }
 
+function artworkUrl(assetPath, refresh = false) {
+    const value = String(assetPath || '');
+    const remoteArtwork = /^https:\/\/(?:cdn\.akamai\.steamstatic\.com\/steam\/apps\/\d+\/(?:library_600x900\.jpg|header\.jpg)|media\.steampowered\.com\/steamcommunity\/public\/images\/apps\/\d+\/[a-f0-9]+\.jpg|(?:[a-z0-9-]+\.)*(?:epicgames\.com|unrealengine\.com)\/[^\s"'<>]+)$/i;
+    if (remoteArtwork.test(value)) return value;
+    return `local-image://asset?path=${encodeURIComponent(value)}${refresh ? `&t=${Date.now()}` : ''}`;
+}
+
+const coverObserver = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+        entries.forEach(({ target, isIntersecting }) => {
+            if (!isIntersecting || !target.isConnected || !target.dataset.coverPath) return;
+            target.style.backgroundImage = `url('${artworkUrl(target.dataset.coverPath)}')`;
+            coverObserver.unobserve(target);
+        });
+    }, { root: library, rootMargin: '180px' })
+    : null;
+
 let currentSettings = { theme: 'dark', steamGridApiKey: '', customColors: {}, customFonts: {}, customLayout: {} };
 let settingsBeforeEdit = null;
 
@@ -103,6 +396,12 @@ function ensureSettingsDefaults(settings) {
     settings.customColors = settings.customColors || {};
     settings.customFonts = settings.customFonts || {};
     settings.customLayout = settings.customLayout || {};
+    settings.steamLibrary = settings.steamLibrary || {};
+    settings.epicLibrary = settings.epicLibrary || {};
+    settings.steamLibrary.steamId ??= '';
+    settings.steamLibrary.apiKey ??= '';
+    settings.steamLibrary.includePlayedFreeGames ??= true;
+    settings.epicLibrary.legendaryPath ??= '';
     settings.customColors.background ??= getComputedStyle(document.documentElement).getPropertyValue('--bg') || 'rgba(12, 12, 12, 0.65)';
     settings.customColors.surface ??= getComputedStyle(document.documentElement).getPropertyValue('--card-bg') || 'rgba(255, 255, 255, 0.05)';
     settings.customColors.text ??= getComputedStyle(document.documentElement).getPropertyValue('--text') || '#ffffff';
@@ -112,6 +411,8 @@ function ensureSettingsDefaults(settings) {
     settings.customLayout.customScaleEnabled ??= false;
     settings.customLayout.customScale ??= 100;
     settings.customLayout.useLogoOnHero ??= true;
+    settings.customLayout.fpsOverlayEnabled ??= false;
+    settings.customLayout.presentMonPath ??= '';
     return settings;
 }
 
@@ -179,6 +480,7 @@ const applySettings = (settings) => {
         root.style.setProperty('--header-text', headerColor);
         root.style.setProperty('--card-bg-hover', 'rgba(255,255,255,0.12)');
     } catch (e) { console.error('Error computing derived theme colors:', e); }
+    document.dispatchEvent(new Event('hb-settings-applied'));
 };
 
 // --- Colour helpers (accept hex, rgb(a), hsl and named colours) ---
@@ -457,12 +759,26 @@ const updateColorInputs = () => {
     // Populate hero logo display toggle
     const useLogoEl = document.getElementById('useLogoOnHero');
     if (useLogoEl) useLogoEl.checked = !!currentSettings.customLayout?.useLogoOnHero;
+    const fpsOverlayEnabledEl = document.getElementById('fpsOverlayEnabled');
+    const presentMonPathEl = document.getElementById('presentMonPath');
+    if (fpsOverlayEnabledEl) fpsOverlayEnabledEl.checked = !!currentSettings.customLayout?.fpsOverlayEnabled;
+    if (presentMonPathEl) presentMonPathEl.value = currentSettings.customLayout?.presentMonPath || '';
+    const steamProfileEl = document.getElementById('steamProfile');
+    const steamWebApiKeyEl = document.getElementById('steamWebApiKey');
+    const steamIncludeFreeGamesEl = document.getElementById('steamIncludeFreeGames');
+    const legendaryPathEl = document.getElementById('legendaryPath');
+    if (steamProfileEl) steamProfileEl.value = currentSettings.steamLibrary?.steamId || '';
+    if (steamWebApiKeyEl) steamWebApiKeyEl.value = currentSettings.steamLibrary?.apiKey || '';
+    if (steamIncludeFreeGamesEl) steamIncludeFreeGamesEl.checked = currentSettings.steamLibrary?.includePlayedFreeGames !== false;
+    if (legendaryPathEl) legendaryPathEl.value = currentSettings.epicLibrary?.legendaryPath || '';
 };
 
-const saveSettings = async () => {
+const saveSettings = async (closeAfterSave = true) => {
     try {
         currentSettings.customColors = currentSettings.customColors || {};
         currentSettings.customLayout = currentSettings.customLayout || {};
+        currentSettings.steamLibrary = currentSettings.steamLibrary || {};
+        currentSettings.epicLibrary = currentSettings.epicLibrary || {};
 
         const apiKeyEl = document.getElementById('steamGridApiKey');
         const colorBgEl = document.getElementById('colorBg');
@@ -481,6 +797,18 @@ const saveSettings = async () => {
         if (customScaleEl) currentSettings.customLayout.customScale = Number(customScaleEl.value);
         const useLogoEl = document.getElementById('useLogoOnHero');
         if (useLogoEl) currentSettings.customLayout.useLogoOnHero = !!useLogoEl.checked;
+        const fpsOverlayEnabledEl = document.getElementById('fpsOverlayEnabled');
+        const presentMonPathEl = document.getElementById('presentMonPath');
+        if (fpsOverlayEnabledEl) currentSettings.customLayout.fpsOverlayEnabled = !!fpsOverlayEnabledEl.checked;
+        if (presentMonPathEl) currentSettings.customLayout.presentMonPath = presentMonPathEl.value.trim();
+        const steamProfileEl = document.getElementById('steamProfile');
+        const steamWebApiKeyEl = document.getElementById('steamWebApiKey');
+        const steamIncludeFreeGamesEl = document.getElementById('steamIncludeFreeGames');
+        const legendaryPathEl = document.getElementById('legendaryPath');
+        if (steamProfileEl) currentSettings.steamLibrary.steamId = steamProfileEl.value.trim();
+        if (steamWebApiKeyEl) currentSettings.steamLibrary.apiKey = steamWebApiKeyEl.value.trim();
+        if (steamIncludeFreeGamesEl) currentSettings.steamLibrary.includePlayedFreeGames = steamIncludeFreeGamesEl.checked;
+        if (legendaryPathEl) currentSettings.epicLibrary.legendaryPath = legendaryPathEl.value.trim();
         currentSettings = ensureSettingsDefaults(currentSettings);
 
         const safeSettings = {
@@ -489,6 +817,8 @@ const saveSettings = async () => {
             customColors: { ...(currentSettings.customColors || {}) },
             customFonts: { ...(currentSettings.customFonts || {}) },
             customLayout: { ...(currentSettings.customLayout || {}) },
+            steamLibrary: { ...(currentSettings.steamLibrary || {}) },
+            epicLibrary: { ...(currentSettings.epicLibrary || {}) },
             windowSize: currentSettings.windowSize || {}
         };
 
@@ -497,13 +827,16 @@ const saveSettings = async () => {
             currentSettings = ensureSettingsDefaults(safeSettings);
             applySettings(currentSettings);
             settingsBeforeEdit = null;
-            closeModal();
+            if (closeAfterSave) closeModal();
+            return true;
         } else {
-            alert('Failed to save settings');
+            if (closeAfterSave) alert('Failed to save settings');
+            return false;
         }
     } catch (err) {
         console.error('Error saving settings:', err);
-        alert('Failed to save settings: ' + err.message);
+        if (closeAfterSave) alert('Failed to save settings: ' + err.message);
+        return false;
     }
 };
 
@@ -567,6 +900,135 @@ ipcRenderer.on('settings-updated', (event, settings) => {
 });
 
 loadSettings();
+
+const browsePresentMonBtn = document.getElementById('browsePresentMonBtn');
+if (browsePresentMonBtn) {
+    browsePresentMonBtn.addEventListener('click', async () => {
+        try {
+            const selectedPath = await ipcRenderer.invoke('select-presentmon-executable');
+            if (selectedPath) {
+                const pathInput = document.getElementById('presentMonPath');
+                if (pathInput) pathInput.value = selectedPath;
+            }
+        } catch (error) {
+            console.error('Could not select PresentMon executable:', error);
+            alert('Could not select the PresentMon executable.');
+        }
+    });
+}
+
+const syncSteamLibraryBtn = document.getElementById('syncSteamLibraryBtn');
+if (syncSteamLibraryBtn) {
+    syncSteamLibraryBtn.addEventListener('click', async () => {
+        const status = document.getElementById('steamSyncStatus');
+        syncSteamLibraryBtn.disabled = true;
+        if (status) status.textContent = 'Saving settings…';
+        try {
+            if (!await saveSettings(false)) {
+                if (status) status.textContent = 'Could not save settings.';
+                return;
+            }
+            if (status) status.textContent = 'Contacting Steam…';
+            const result = await ipcRenderer.invoke('sync-steam-library');
+            currentSettings.steamLibrary.steamId = result.steamId;
+            const profileInput = document.getElementById('steamProfile');
+            if (profileInput) profileInput.value = result.steamId;
+            const { added, linked } = mergeSteamLibrary(result.games);
+            const settingsSaved = await saveSettings(false);
+            if (status) status.textContent = `Synced ${result.games.length} games; added ${added}, matched ${linked}.`;
+            if (!settingsSaved && status) status.textContent += ' The resolved SteamID could not be saved.';
+        } catch (error) {
+            console.error('Steam library sync failed:', error);
+            if (status) status.textContent = error.message || 'Steam library sync failed.';
+        } finally {
+            syncSteamLibraryBtn.disabled = false;
+        }
+    });
+}
+
+const browseLegendaryBtn = document.getElementById('browseLegendaryBtn');
+if (browseLegendaryBtn) {
+    browseLegendaryBtn.addEventListener('click', async () => {
+        try {
+            const selectedPath = await ipcRenderer.invoke('select-legendary-executable');
+            if (selectedPath) document.getElementById('legendaryPath').value = selectedPath;
+        } catch (error) {
+            console.error('Could not select Legendary executable:', error);
+            alert('Could not select the Legendary executable.');
+        }
+    });
+}
+
+const epicAuthBtn = document.getElementById('epicAuthBtn');
+if (epicAuthBtn) {
+    epicAuthBtn.addEventListener('click', async () => {
+        const status = document.getElementById('epicSyncStatus');
+        epicAuthBtn.disabled = true;
+        try {
+            if (!await saveSettings(false)) {
+                if (status) status.textContent = 'Could not save settings.';
+                return;
+            }
+            await ipcRenderer.invoke('open-legendary-auth');
+            if (status) status.textContent = 'Complete Epic sign-in in the Legendary window, then sync your library.';
+        } catch (error) {
+            console.error('Could not open Legendary sign-in:', error);
+            if (status) status.textContent = error.message || 'Could not start Legendary sign-in.';
+        } finally {
+            epicAuthBtn.disabled = false;
+        }
+    });
+}
+
+const syncEpicLibraryBtn = document.getElementById('syncEpicLibraryBtn');
+if (syncEpicLibraryBtn) {
+    syncEpicLibraryBtn.addEventListener('click', async () => {
+        const status = document.getElementById('epicSyncStatus');
+        syncEpicLibraryBtn.disabled = true;
+        if (status) status.textContent = 'Saving settings…';
+        try {
+            if (!await saveSettings(false)) {
+                if (status) status.textContent = 'Could not save settings.';
+                return;
+            }
+            if (status) status.textContent = 'Reading Epic library through Legendary…';
+            const result = await ipcRenderer.invoke('sync-epic-library');
+            const { added, linked } = mergeEpicLibrary(result.games);
+            if (status) status.textContent = `Synced ${result.games.length} games; added ${added}, matched ${linked}.`;
+        } catch (error) {
+            console.error('Epic library sync failed:', error);
+            if (status) status.textContent = error.message || 'Epic library sync failed.';
+        } finally {
+            syncEpicLibraryBtn.disabled = false;
+        }
+    });
+}
+
+const steamApiKeyLink = document.getElementById('steamApiKeyLink');
+if (steamApiKeyLink) {
+    steamApiKeyLink.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+            await ipcRenderer.invoke('open-steam-api-key-page');
+        } catch (error) {
+            console.error('Could not open Steam API key page:', error);
+            alert('Could not open the Steam API key page.');
+        }
+    });
+}
+
+const legendaryDownloadLink = document.getElementById('legendaryDownloadLink');
+if (legendaryDownloadLink) {
+    legendaryDownloadLink.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+            await ipcRenderer.invoke('open-legendary-download-page');
+        } catch (error) {
+            console.error('Could not open Legendary releases:', error);
+            alert('Could not open the Legendary download page.');
+        }
+    });
+}
 
 const applyLayoutMode = () => {
     if (!isFullScreenMode) {
@@ -645,13 +1107,68 @@ function formatLastPlayed(timestamp) {
     return playedAt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const launchItem = (id) => { 
-    if (gameData[id]?.path) { 
-        gameData[id].lastPlayed = Date.now();
-        saveToDisk(); 
-        document.getElementById('dashLastPlayed').innerText = formatLastPlayed(gameData[id].lastPlayed);
-        ipcRenderer.send('launch-game-process', { id, executablePath: gameData[id].path, options: gameData[id].launch }); 
+const launchItem = async (id) => {
+    const game = gameData[id];
+    if (!game?.path) return;
+
+    if (game.epicLibrarySynced && game.epicAppName) {
+        const status = document.getElementById('epicSyncStatus');
+        const action = game.epicInstalled ? 'launch' : 'install';
+        if (action === 'install') {
+            game.epicInstalling = true;
+            updatePlayButton(game);
+            if (status) status.textContent = `Starting Legendary install for ${game.name}…`;
+        } else {
+            game.lastPlayed = Date.now();
+            saveToDisk();
+            const lastPlayed = document.getElementById('dashLastPlayed');
+            if (lastPlayed) lastPlayed.innerText = formatLastPlayed(game.lastPlayed);
+            if (status) status.textContent = `Launching ${game.name} with Legendary…`;
+        }
+        try {
+            await ipcRenderer.invoke('epic-game-action', { action, appName: game.epicAppName });
+        } catch (error) {
+            game.epicInstalling = false;
+            updatePlayButton(game);
+            console.error(`Could not ${action} Epic game:`, error);
+            if (status) status.textContent = error.message || `Could not ${action} Epic game.`;
+        }
+        return;
     }
+
+    const appId = steamAppIdForGame(game);
+    if (appId && isSteamOwnedGame(game)) {
+        let state = steamInstallStates[appId];
+        if (!state) {
+            try {
+                const states = await ipcRenderer.invoke('steam-update-status', [appId]);
+                steamInstallStates = { ...steamInstallStates, ...states };
+                state = steamInstallStates[appId];
+            } catch (error) {
+                console.error('Could not check Steam installation status:', error);
+                alert('Could not check whether this Steam game is installed.');
+                return;
+            }
+        }
+        if (!state?.installed) {
+            try {
+                await ipcRenderer.invoke('install-steam-game', appId);
+                steamInstallStates[appId] = { installed: false, present: true, state: 'ok', progress: 0 };
+                updatePlayButton(game);
+            } catch (error) {
+                console.error('Could not start Steam installation:', error);
+                alert(`Could not open the Steam installer: ${error.message}`);
+            }
+            return;
+        }
+    }
+
+    game.lastPlayed = Date.now();
+    saveToDisk();
+    const lastPlayed = document.getElementById('dashLastPlayed');
+    if (lastPlayed) lastPlayed.innerText = formatLastPlayed(game.lastPlayed);
+    const launchPath = game.steamLibrarySynced && appId ? `steam://rungameid/${appId}` : game.path;
+    ipcRenderer.send('launch-game-process', { id, executablePath: launchPath, options: game.launch });
 };
 
 function applyPlayButtonColor(image) {
@@ -781,7 +1298,7 @@ function updateLogoLivePreview(game, forceReload = false) {
     if (preview.dataset.backgroundPath !== (backgroundPath || '')) {
         preview.dataset.backgroundPath = backgroundPath || '';
         preview.style.backgroundImage = backgroundPath
-            ? `url('local-image://asset?path=${encodeURIComponent(backgroundPath)}${forceReload ? `&t=${Date.now()}` : ''}')`
+            ? `url('${artworkUrl(backgroundPath, forceReload)}')`
             : 'none';
         preview.style.aspectRatio = '16 / 9';
 
@@ -792,7 +1309,7 @@ function updateLogoLivePreview(game, forceReload = false) {
                     preview.style.aspectRatio = `${backgroundImage.naturalWidth} / ${backgroundImage.naturalHeight}`;
                 }
             };
-            backgroundImage.src = `local-image://asset?path=${encodeURIComponent(backgroundPath)}${forceReload ? `&t=${Date.now()}` : ''}`;
+            backgroundImage.src = artworkUrl(backgroundPath, forceReload);
         }
     }
 
@@ -808,7 +1325,7 @@ function updateLogoLivePreview(game, forceReload = false) {
     }
     if (logoImage.dataset.logoPath !== logoPath) {
         logoImage.dataset.logoPath = logoPath;
-        logoImage.src = `local-image://asset?path=${encodeURIComponent(logoPath)}${forceReload ? `&t=${Date.now()}` : ''}`;
+        logoImage.src = artworkUrl(logoPath, forceReload);
     }
     applyLogoPosition(logoImage, game.heroLogoPosition || 'bottom-left', game);
     logoImage.onload = () => applyLogoImageScale(logoImage, game, preview);
@@ -888,8 +1405,10 @@ if (logoLivePreview) {
         let x = ((event.clientX - rect.left) / rect.width) * 100;
         let y = ((event.clientY - rect.top) / rect.height) * 100;
         if (game.heroLogoSnapToGrid) {
-            x = Math.round(x / 10) * 10;
-            y = Math.round(y / 10) * 10;
+            const gridStep = 5;
+            const horizontalStep = gridStep * rect.height / rect.width;
+            x = Math.round(x / horizontalStep) * horizontalStep;
+            y = Math.round(y / gridStep) * gridStep;
         }
         game.heroLogoX = Math.max(5, Math.min(95, x));
         game.heroLogoY = Math.max(5, Math.min(95, y));
@@ -952,6 +1471,7 @@ function renderSteamMedia(selectedId, media) {
     const screenshotGrid = document.getElementById('dpScreenshotGrid');
     const screenshotStatus = document.getElementById('dpScreenshotStatus');
     const genres = document.getElementById('dpGameGenres');
+    const profile = document.querySelector('.dp-profile');
     const recommendationsSection = document.getElementById('dpRelated');
     const recommendationsGrid = document.getElementById('relatedGamesGrid');
     const recommendationsStatus = document.getElementById('relatedGamesEmpty');
@@ -959,6 +1479,7 @@ function renderSteamMedia(selectedId, media) {
 
     screenshotGrid.replaceChildren();
     genres.textContent = media?.genres?.join(' · ') || '';
+    if (profile) profile.hidden = !genres.textContent;
     if (media?.loading) {
         screenshotStatus.textContent = 'Looking for official Steam screenshots...';
     } else if (media?.success && media.screenshots.length) {
@@ -978,7 +1499,7 @@ function renderSteamMedia(selectedId, media) {
         const frame = document.createElement('div');
         frame.className = 'dp-screenshot';
         const image = document.createElement('img');
-        image.src = `local-image://asset?path=${encodeURIComponent(game.background || game.cover)}`;
+        image.src = artworkUrl(game.background || game.cover);
         image.alt = `${game.name} saved artwork`;
         image.loading = 'lazy';
         frame.appendChild(image);
@@ -1102,6 +1623,7 @@ const selectListItem = (id) => {
     localStorage.setItem('hb-last-selected', id);
     const d = gameData[id];
     if (!d) return;
+    document.dispatchEvent(new Event('hb-game-selected'));
     
     document.querySelectorAll('.game-card').forEach(c => c.classList.remove('list-selected'));
     document.getElementById(id)?.classList.add('list-selected');
@@ -1109,11 +1631,10 @@ const selectListItem = (id) => {
     document.getElementById('dp-empty-state').style.display = 'none';
     const dpContent = document.getElementById('dp-content-state');
     dpContent.style.display = 'flex';
-    document.getElementById('dpTitle').innerText = d.name;
     loadSteamMedia(id);
     
     const heroBg = d.background || d.cover;
-    document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}')` : 'none';
+    document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('${artworkUrl(heroBg, true)}')` : 'none';
     const requestId = ++heroImageRequestId;
     currentHeroImage = null;
     if (heroBg) {
@@ -1121,13 +1642,14 @@ const selectListItem = (id) => {
         heroImage.onload = () => {
             if (requestId !== heroImageRequestId) return;
             currentHeroImage = heroImage;
-            applyPlayButtonColor(heroImage);
+            if (/^https:\/\//i.test(heroBg)) resetPlayButtonColor();
+            else applyPlayButtonColor(heroImage);
             updateHeroHeight();
         };
         heroImage.onerror = () => {
             if (requestId === heroImageRequestId) resetPlayButtonColor();
         };
-        heroImage.src = `local-image://asset?path=${encodeURIComponent(heroBg)}&t=${Date.now()}`;
+        heroImage.src = artworkUrl(heroBg, true);
     } else {
         resetPlayButtonColor();
         const hero = document.getElementById('dpHero');
@@ -1135,6 +1657,7 @@ const selectListItem = (id) => {
         hero.style.minHeight = '';
     }
     document.getElementById('dpPlayBtn').onclick = () => launchItem(id);
+    updatePlayButton(d);
 
     if (isFullScreenMode) {
         enterFullScreenPreview();
@@ -1150,30 +1673,27 @@ const selectListItem = (id) => {
 
     try {
         const dpLogoContainer = document.getElementById('dpLogoContainer');
-        const dpTitleEl = document.getElementById('dpTitle');
         const logoPath = d.logo || d.icon;
         if (currentSettings?.customLayout?.useLogoOnHero && logoPath) {
-            const imgSrc = `local-image://asset?path=${encodeURIComponent(logoPath)}&t=${Date.now()}`;
+            const imgSrc = artworkUrl(logoPath, true);
             if (dpLogoContainer) dpLogoContainer.innerHTML = `<img src="${imgSrc}" style="width:auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" alt="logo"/>`;
             applyHeroLogoSettings(d);
-            if (dpTitleEl) dpTitleEl.style.display = 'none';
         } else {
             if (dpLogoContainer) dpLogoContainer.innerHTML = '';
-            if (dpTitleEl) dpTitleEl.style.display = '';
         }
     } catch (e) { console.error('Error rendering hero logo:', e); }
 };
 
 async function applyListIcon(thumbEl, gameId, gameDataObj) {
     if (gameDataObj.icon) {
-        thumbEl.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(gameDataObj.icon)}&t=${Date.now()}')`;
+        thumbEl.style.backgroundImage = `url('${artworkUrl(gameDataObj.icon, true)}')`;
         return;
     }
     if (iconCache[gameId]) {
         thumbEl.style.backgroundImage = `url('${iconCache[gameId]}')`;
         return;
     }
-    if (gameDataObj.path) {
+    if (gameDataObj.path && !/^[a-z][a-z\d+.-]*:\/\//i.test(gameDataObj.path)) {
         try {
             const base64Icon = await ipcRenderer.invoke('get-file-icon', gameDataObj.path);
             if (base64Icon) {
@@ -1185,10 +1705,14 @@ async function applyListIcon(thumbEl, gameId, gameDataObj) {
 }
 
 function renderLibrary() {
+    if (coverObserver) coverObserver.disconnect();
     library.innerHTML = '';
     const query = librarySearch.value.toLowerCase();
     
-    let ids = Object.keys(gameData).filter(id => !query || gameData[id].name.toLowerCase().includes(query));
+    const installedOnly = document.documentElement.dataset.libraryFilter === 'installed';
+    const launcherFilter = document.documentElement.dataset.launcherFilter || 'all';
+    let ids = Object.keys(gameData).filter(id =>
+        matchesLibraryFilters(gameData[id], query, installedOnly, launcherFilter));
     
     const sortModes = { 
         alpha: (a, b) => gameData[a].name.localeCompare(gameData[b].name), 
@@ -1205,12 +1729,12 @@ function renderLibrary() {
         const card = document.createElement('div');
         const selectedClass = (viewMode === 'list' && id === selectedListId) ? 'list-selected' : '';
         
-        card.className = `game-card ${d.favorite ? 'is-fav' : ''} ${selectedClass}`;
+        card.className = `game-card ${d.favorite ? 'is-fav' : ''} ${selectedClass} ${isGameInstalled(d) ? '' : 'not-installed'}`;
         card.id = id;
         
         if (viewMode === 'grid') {
             const hasCover = !!d.cover;
-            if (hasCover) card.style.backgroundImage = `url('local-image://asset?path=${encodeURIComponent(d.cover)}&t=${Date.now()}')`;
+            if (hasCover) card.dataset.coverPath = d.cover;
             card.innerHTML = `<div class="fav-badge"></div> ${!hasCover ? `<div class="fallback-title">${escapeHtml(d.name)}</div>` : ''} <div class="info-overlay"><div style="font-weight:bold; font-size:0.9rem">${escapeHtml(d.name)}</div></div>`;
             card.onclick = () => {
                 if (isFullScreenMode) selectListItem(id);
@@ -1223,6 +1747,10 @@ function renderLibrary() {
         }
         
         library.appendChild(card);
+        if (viewMode === 'grid' && d.cover) {
+            if (coverObserver) coverObserver.observe(card);
+            else card.style.backgroundImage = `url('${artworkUrl(d.cover)}')`;
+        }
     });
 
     if (isControllerMode) applyFocus();
@@ -1282,7 +1810,7 @@ function updateCustomizePreviews(game, forceReload = false) {
         if (!preview) return;
         const assetPath = game[type];
         preview.style.backgroundImage = assetPath
-            ? `url('local-image://asset?path=${encodeURIComponent(assetPath)}&t=${Date.now()}')`
+            ? `url('${artworkUrl(assetPath, true)}')`
             : 'none';
     });
 }
@@ -1433,7 +1961,16 @@ document.addEventListener('contextmenu', (e) => {
         currentEditingId = card.id;
         const gData = gameData[currentEditingId];
         if (gData) {
-            ipcRenderer.send('show-game-context-menu', { id: currentEditingId, ...gData });
+            const appId = steamAppIdForGame(gData);
+            const status = steamInstallStates[appId];
+            const playLabel = !isSteamOwnedGame(gData) || status?.installed
+                ? 'Play' : status?.present ? 'Installing…' : 'Install';
+            ipcRenderer.send('show-game-context-menu', {
+                id: currentEditingId,
+                ...gData,
+                playLabel,
+                playDisabled: playLabel === 'Installing…'
+            });
         }
     }
 });

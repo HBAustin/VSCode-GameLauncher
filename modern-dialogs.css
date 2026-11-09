@@ -47,10 +47,12 @@ html[data-ui="modern"] #contextOptionsList .menu-btn::before {
 html[data-ui="modern"] .ctx-menu {
     position: fixed;
     z-index: 3000;
-    min-width: 250px;
-    max-width: 310px;
-    padding: 6px;
-    border-radius: 22px;
+    min-width: 218px;
+    max-width: 270px;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    padding: 5px;
+    border-radius: 16px;
     /* Follows the active theme: panel colour from --m-surface, tinted by the accent */
     color: var(--m-on-surface, #f2f3f5);
     background: color-mix(in srgb, var(--m-surface) 93%, var(--accent));
@@ -71,44 +73,44 @@ html[data-ui="modern"] .ctx-menu {
 html[data-ui="modern"] .ctx-head {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 10px 12px;
-    margin-bottom: 4px;
-    border-radius: 16px 16px 0 0;
+    gap: 9px;
+    padding: 7px 8px 8px;
+    margin-bottom: 3px;
+    border-radius: 12px 12px 0 0;
     background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--m-on-surface, #ffffff) 12%, transparent);
 }
 html[data-ui="modern"] .ctx-thumb {
     flex: none;
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
     background: rgba(255, 255, 255, 0.06) center / cover no-repeat;
     border: 1px solid var(--stroke);
 }
 html[data-ui="modern"] .ctx-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 html[data-ui="modern"] .ctx-title {
-    font-size: 0.95rem;
+    font-size: 0.86rem;
     font-weight: 700;
     letter-spacing: -0.015em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-html[data-ui="modern"] .ctx-sub { font-size: 0.76rem; color: color-mix(in srgb, var(--m-on-surface, #f2f3f5) 58%, transparent); }
+html[data-ui="modern"] .ctx-sub { font-size: 0.7rem; color: color-mix(in srgb, var(--m-on-surface, #f2f3f5) 58%, transparent); }
 
 html[data-ui="modern"] .ctx-item {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 9px;
     width: 100%;
-    padding: 10px 12px;
+    padding: 7px 9px;
     border: 0;
     border-radius: 14px;
     background: transparent;
     color: inherit;
     font: inherit;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     font-weight: 600;
     text-align: left;
     cursor: pointer;
@@ -133,6 +135,9 @@ html[data-ui="modern"] .ctx-item.danger:focus-visible { background: rgba(255, 80
 html[data-ui="modern"] .ctx-item.danger.confirm { background: #e5484d; color: #ffffff; }
 
 html[data-ui="modern"] .ctx-sep { height: 1px; margin: 6px 10px; background: color-mix(in srgb, var(--m-on-surface, #ffffff) 12%, transparent); }
+
+html[data-ui="modern"] .ctx-item::before { width: 15px; height: 15px; }
+html[data-ui="modern"] .ctx-sep { margin: 4px 8px; }
 
 /* The game the menu belongs to */
 html[data-ui="modern"] .game-card.ctx-target {
@@ -192,18 +197,21 @@ html[data-ui="modern"] #contextOptionsList .menu-btn[data-action="remove"]::afte
    ARTWORK CUSTOMISER
    ========================================================================== */
 html[data-ui="modern"] #customizeModal .artwork-modal-content {
-    width: min(1080px, 94vw);
-    max-width: 1080px;
-    max-height: 90vh;
-    padding: 28px 30px 24px;
-    border-radius: 30px;
+    width: min(78vw, 1300px);
+    max-width: none;
+    height: min(78vh, 900px);
+    max-height: 88vh;
+    padding: 20px 24px 16px;
+    border-radius: 24px;
     text-align: left;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
 }
 html[data-ui="modern"] #customizeModal h2 {
     margin: 0;
     color: var(--text) !important;
-    font-size: 1.65rem;
+    font-size: 1.4rem;
     font-weight: 800;
     letter-spacing: -0.03em;
 }
@@ -215,55 +223,59 @@ html[data-ui="modern"] .cz-sub {
     font-size: 0.92rem;
 }
 
-/* Card grid: Cover + Background on top, Logo + Icon below */
+/* Keep the standard artwork options compact above the larger logo editor. */
 html[data-ui="modern"] #customizeOptionsList {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    grid-auto-flow: dense;
-    gap: 16px;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+    flex: none;
+    min-height: auto;
+    align-content: start;
 }
 html[data-ui="modern"] .artwork-row {
     grid-column: span 6;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    align-items: center;
+    gap: 8px 14px;
     margin-top: 0;
-    padding: 16px;
-    border-radius: 24px;
+    padding: 14px;
+    border-radius: 18px;
+    min-height: clamp(104px, 14vh, 140px);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--stroke);
     transition: border-color 0.2s ease, background 0.2s ease;
 }
 html[data-ui="modern"] .artwork-row:hover { border-color: var(--stroke-strong); background: rgba(255, 255, 255, 0.055); }
-html[data-ui="modern"] .artwork-row[data-artwork-type="cover"]      { grid-column: span 4; }
-html[data-ui="modern"] .artwork-row[data-artwork-type="background"] { grid-column: span 8; }
-html[data-ui="modern"] .artwork-row[data-artwork-type="logo"]       { grid-column: span 8; }
-html[data-ui="modern"] .artwork-row[data-artwork-type="icon"]       { grid-column: span 4; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="cover"]      { grid-column: span 4; grid-row: 1; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="background"] { grid-column: span 5; grid-row: 1; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="logo"]       { grid-column: 1 / -1; grid-row: 2; }
+html[data-ui="modern"] .artwork-row[data-artwork-type="icon"]       { grid-column: span 3; grid-row: 1; }
 
-html[data-ui="modern"] .artwork-row h3 { margin: 0 0 4px; font-size: 1.02rem; font-weight: 700; letter-spacing: -0.015em; }
-html[data-ui="modern"] .artwork-row p { margin: 0; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+html[data-ui="modern"] .artwork-row h3 { margin: 0 0 4px; font-size: 1.08rem; font-weight: 700; letter-spacing: -0.015em; }
+html[data-ui="modern"] .artwork-row p { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
 
 /* Previews */
 html[data-ui="modern"] .artwork-preview {
-    width: 100%;
-    height: 200px;
-    border-radius: 16px;
+    grid-column: 1;
+    grid-row: 1 / -1;
+    width: 96px;
+    height: 68px;
+    border-radius: 12px;
     border: 1px solid var(--stroke);
     background: rgba(0, 0, 0, 0.35) center / cover no-repeat;
 }
 html[data-ui="modern"] .artwork-row[data-artwork-type="cover"] .artwork-preview {
-    width: auto;
-    height: 250px;
-    aspect-ratio: 2 / 3;
-    align-self: center;
+    width: 60px;
+    height: 90px;
     background-size: cover;
 }
 html[data-ui="modern"] .artwork-row[data-artwork-type="icon"] .artwork-preview {
-    width: 124px;
-    height: 124px;
-    align-self: center;
-    border-radius: 30px;
+    width: 68px;
+    height: 68px;
+    border-radius: 18px;
     background-size: contain;
 }
 /* The logo card shows the live composite instead, so the loose logo thumbnail is redundant */
@@ -273,30 +285,58 @@ html[data-ui="modern"] .logo-artwork-row > .artwork-preview { display: none; }
 html[data-ui="modern"] .artwork-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 6px;
+    grid-column: 2;
     min-width: 0;
-    margin-top: auto;
 }
-html[data-ui="modern"] .artwork-actions .menu-btn { padding: 11px 12px; text-align: center; font-size: 0.86rem; }
+html[data-ui="modern"] .artwork-actions .menu-btn { padding: 9px 10px; text-align: center; font-size: 0.84rem; }
 html[data-ui="modern"] .artwork-actions .menu-btn:first-child {
     background: color-mix(in srgb, var(--accent) 20%, transparent);
     border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 html[data-ui="modern"] .artwork-actions .menu-btn:first-child:hover { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 
-/* Logo card: live preview with the controls laid out beneath it */
+/* Use the full card width for the composition preview, with controls below it. */
+html[data-ui="modern"] .logo-artwork-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 12px;
+    padding: 16px;
+    min-height: 0;
+}
 html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 18px;
-    row-gap: 6px;
-    align-items: center;
+    grid-column: 1;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 8px;
+    align-items: start;
+    align-self: start;
+    height: auto;
+    min-width: 0;
 }
 html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > h3,
 html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > p,
-html[data-ui="modern"] #logoLivePreview { grid-column: 1 / -1; }
-html[data-ui="modern"] #logoLivePreview { margin-top: 8px; border-radius: 18px; }
-html[data-ui="modern"] .logo-preview-hint { margin: 6px 0 12px !important; }
+html[data-ui="modern"] #logoLivePreview,
+html[data-ui="modern"] .logo-preview-hint,
+html[data-ui="modern"] label[for="gameLogoScale"],
+html[data-ui="modern"] #gameLogoScale,
+html[data-ui="modern"] label[for="gameLogoPosition"],
+html[data-ui="modern"] #gameLogoPosition,
+html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > label:not([for]) {
+    grid-column: 1;
+    grid-row: auto;
+}
+html[data-ui="modern"] #logoLivePreview {
+    display: block;
+    width: 100%;
+    height: auto;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    border-radius: 16px;
+}
+html[data-ui="modern"] .logo-preview-hint { margin: 0 !important; }
 
 html[data-ui="modern"] label[for="gameLogoScale"],
 html[data-ui="modern"] label[for="gameLogoPosition"] {
@@ -305,12 +345,11 @@ html[data-ui="modern"] label[for="gameLogoPosition"] {
     font-size: 0.78rem !important;
     font-weight: 650;
 }
-html[data-ui="modern"] label[for="gameLogoScale"]    { grid-column: 1; grid-row: 5; }
-html[data-ui="modern"] #gameLogoScale                { grid-column: 1; grid-row: 6; width: 100%; accent-color: var(--accent); }
-html[data-ui="modern"] label[for="gameLogoPosition"] { grid-column: 2; grid-row: 5; }
+html[data-ui="modern"] label[for="gameLogoScale"]    { grid-row: auto; }
+html[data-ui="modern"] #gameLogoScale                { grid-row: auto; width: 100%; accent-color: var(--accent); }
+html[data-ui="modern"] label[for="gameLogoPosition"] { grid-row: auto; }
 html[data-ui="modern"] #gameLogoPosition {
-    grid-column: 2;
-    grid-row: 6;
+    grid-row: auto;
     margin-top: 0 !important;
     padding: 10px 12px !important;
     color: var(--text) !important;
@@ -319,26 +358,335 @@ html[data-ui="modern"] #gameLogoPosition {
     border-radius: 12px !important;
 }
 html[data-ui="modern"] .logo-artwork-row > div:nth-child(2) > label:not([for]) {
-    grid-column: 1 / -1;
-    grid-row: 7;
-    margin-top: 12px !important;
+    grid-row: auto;
+    margin-top: 2px !important;
     color: var(--text) !important;
     font-size: 0.86rem !important;
     font-weight: 600;
     cursor: pointer;
 }
 html[data-ui="modern"] #gameLogoSnapToGrid { accent-color: var(--accent); width: 18px; height: 18px; }
+html[data-ui="modern"] .logo-artwork-row > .artwork-actions {
+    grid-column: 1;
+    grid-row: auto;
+    align-self: center;
+    grid-template-columns: 1fr 1fr;
+}
 
 /* Close */
 html[data-ui="modern"] #customizeOptionsList > .menu-btn[data-action="cancel"] {
     grid-column: 1 / -1;
+    grid-row: 3;
     justify-self: end;
-    min-width: 150px;
-    margin-top: 4px !important;
+    min-width: 120px;
+    padding: 8px 14px;
+    margin-top: 0 !important;
     border-radius: 999px;
 }
 
-@media (max-width: 900px) {
-    html[data-ui="modern"] .artwork-row,
-    html[data-ui="modern"] .artwork-row[data-artwork-type] { grid-column: 1 / -1; }
+@media (max-width: 980px) {
+    html[data-ui="modern"] #customizeModal .artwork-modal-content {
+        width: min(88vw, 900px);
+        height: auto;
+        max-height: 90vh;
+        box-sizing: border-box;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    html[data-ui="modern"] #customizeOptionsList {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        flex: none;
+        min-height: auto;
+    }
+    html[data-ui="modern"] .artwork-row[data-artwork-type="cover"],
+    html[data-ui="modern"] .artwork-row[data-artwork-type="background"],
+    html[data-ui="modern"] .artwork-row[data-artwork-type="icon"] {
+        grid-column: 1 / -1;
+        grid-row: auto;
+    }
+    html[data-ui="modern"] .artwork-row[data-artwork-type="logo"],
+    html[data-ui="modern"] #customizeOptionsList > .menu-btn[data-action="cancel"] { grid-row: auto; }
+    html[data-ui="modern"] .logo-artwork-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 540px) {
+    html[data-ui="modern"] #customizeModal .artwork-modal-content { padding: 16px; }
+}
+
+/* Keep launcher preferences usable at the app's minimum window size and on short displays. */
+html[data-ui="modern"] #settingsModal {
+    padding: 16px;
+    overflow-y: auto;
+}
+html[data-ui="modern"] #settingsModal .settings-modal-content {
+    width: min(880px, 100%);
+    height: min(660px, calc(100vh - 32px));
+    max-height: calc(100vh - 32px);
+    min-height: 0;
+    padding: 22px 24px;
+    gap: 14px;
+    overflow: hidden;
+}
+html[data-ui="modern"] #settingsModal .settings-body {
+    grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+    gap: 18px;
+}
+html[data-ui="modern"] #settingsModal .settings-panels {
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+html[data-ui="modern"] #settingsModal [hidden] { display: none !important; }
+html[data-ui="modern"] #settingsModal .settings-actions {
+    flex: none;
+    gap: 8px;
+    padding-top: 12px;
+}
+html[data-ui="modern"] #settingsModal .settings-actions .menu-btn {
+    min-height: 40px;
+    padding: 9px 18px;
+}
+
+@media (max-width: 720px) {
+    html[data-ui="modern"] #settingsModal .settings-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 12px;
+    }
+    html[data-ui="modern"] #settingsModal .settings-tabs {
+        flex-direction: row;
+        gap: 6px;
+    }
+    html[data-ui="modern"] #settingsModal .settings-tab {
+        align-items: center;
+        padding: 9px 6px;
+        text-align: center;
+    }
+    html[data-ui="modern"] #settingsModal .settings-tab small { display: none; }
+    html[data-ui="modern"] #settingsModal .settings-panels { padding-right: 4px; }
+}
+
+/* Settings: horizontal navigation, shorter header, and compact controls. */
+html[data-ui="modern"] #settingsModal {
+    padding: 18px;
+    overflow-y: auto;
+}
+html[data-ui="modern"] #settingsModal .settings-modal-content {
+    width: min(900px, 100%);
+    height: min(660px, calc(100vh - 36px));
+    max-height: calc(100vh - 36px);
+    padding: 18px 22px 14px;
+    gap: 10px;
+    border-radius: 20px;
+}
+html[data-ui="modern"] #settingsModal .settings-heading h2 {
+    margin: 0;
+    font-size: 1.45rem;
+}
+html[data-ui="modern"] #settingsModal .settings-heading p:not(.settings-eyebrow) {
+    display: none;
+}
+html[data-ui="modern"] #settingsModal .settings-eyebrow {
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+}
+html[data-ui="modern"] #settingsModal .settings-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 0;
+}
+html[data-ui="modern"] #settingsModal .settings-tabs {
+    flex-direction: row;
+    gap: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--stroke);
+}
+html[data-ui="modern"] #settingsModal .settings-tab {
+    flex: 1;
+    align-items: center;
+    padding: 8px 10px;
+    text-align: center;
+}
+html[data-ui="modern"] #settingsModal .settings-tab span { font-size: 0.86rem; }
+html[data-ui="modern"] #settingsModal .settings-tab small { display: none; }
+html[data-ui="modern"] #settingsModal .settings-panels { padding: 0 4px 0 0; }
+html[data-ui="modern"] #settingsModal .settings-panels h3 {
+    margin-bottom: 10px;
+    font-size: 1rem;
+}
+html[data-ui="modern"] #settingsModal .settings-mode-switch {
+    gap: 3px;
+    margin-bottom: 12px;
+}
+html[data-ui="modern"] #settingsModal .settings-mode-option {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+}
+html[data-ui="modern"] #settingsModal .theme-presets { gap: 8px; }
+html[data-ui="modern"] #settingsModal .theme-option {
+    min-height: 52px;
+    gap: 10px !important;
+    padding: 8px 10px !important;
+    font-size: 0.84rem !important;
+}
+html[data-ui="modern"] #settingsModal .theme-option-swatch {
+    width: 24px !important;
+    height: 24px !important;
+}
+html[data-ui="modern"] #settingsModal .theme-option-note { display: none; }
+html[data-ui="modern"] #settingsModal .settings-group { margin-top: 14px; }
+html[data-ui="modern"] #settingsModal .settings-path-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+html[data-ui="modern"] #settingsModal .settings-path-row .settings-text-input {
+    min-width: 0;
+    flex: 1;
+}
+html[data-ui="modern"] #settingsModal #steamSyncStatus {
+    min-width: 0;
+    flex: 1;
+    margin: 0;
+}
+html[data-ui="modern"] #settingsModal .epic-library-actions { flex-wrap: wrap; }
+html[data-ui="modern"] #settingsModal #epicSyncStatus {
+    min-width: 100%;
+    margin: 0;
+}
+html[data-ui="modern"] #settingsModal #settingsSteam a {
+    color: var(--accent);
+}
+html[data-ui="modern"] #settingsModal #settingsEpic a { color: var(--accent); }
+html[data-ui="modern"] #settingsModal #uiStyleSection {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+    align-items: center;
+    gap: 6px 12px;
+    margin: 16px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--stroke);
+}
+html[data-ui="modern"] #settingsModal #uiStyleSection > .settings-group-label { margin: 0; }
+html[data-ui="modern"] #settingsModal .ui-style-switch {
+    gap: 3px;
+    padding: 3px;
+    border-radius: 10px;
+}
+html[data-ui="modern"] #settingsModal .ui-style-switch span {
+    padding: 7px 9px;
+    font-size: 0.78rem;
+}
+html[data-ui="modern"] #settingsModal #uiStyleHint,
+html[data-ui="modern"] #settingsModal #cornersRow { grid-column: 1 / -1; }
+html[data-ui="modern"] #settingsModal #uiStyleHint { margin: 0; font-size: 0.74rem; }
+html[data-ui="modern"] #settingsModal #cornersRow .settings-toggle {
+    width: fit-content;
+    padding: 7px 0;
+    margin: 2px 0 0;
+    border: 0;
+    background: transparent !important;
+    font-size: 0.82rem;
+}
+html[data-ui="modern"] #settingsModal #cornersHint { margin: 0; font-size: 0.74rem; }
+html[data-ui="modern"] #settingsModal #brandSection {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--stroke);
+}
+html[data-ui="modern"] #settingsModal .brand-setting {
+    gap: 10px;
+    padding: 9px 10px;
+    background: var(--settings-card, color-mix(in srgb, var(--m-surface) 88%, white 12%)) !important;
+}
+html[data-ui="modern"] #settingsModal .brand-preview {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+}
+html[data-ui="modern"] #settingsModal .brand-setting-text { font-size: 0.8rem; }
+html[data-ui="modern"] #settingsModal .brand-setting-text span { font-size: 0.7rem; }
+html[data-ui="modern"] #settingsModal .brand-setting .menu-btn {
+    min-height: 34px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+}
+html[data-ui="modern"] #settingsModal .settings-actions {
+    padding-top: 9px;
+}
+html[data-ui="modern"] #settingsModal .settings-actions .menu-btn {
+    min-height: 36px;
+    padding: 7px 16px;
+    font-size: 0.82rem;
+}
+
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .settings-toggle,
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .brand-setting,
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .settings-color-field,
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .theme-option {
+    color: var(--dyn-text, #f2f3f5) !important;
+    background-color: var(--settings-card, #202024) !important;
+}
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .brand-setting-text span,
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal .settings-group-label {
+    color: var(--dyn-text-muted, rgba(242,243,245,.62)) !important;
+}
+html[data-ui="modern"][data-theme="dynamic"] #settingsModal #cornersRow .settings-toggle {
+    background: transparent !important;
+}
+
+@media (max-width: 600px) {
+    html[data-ui="modern"] #settingsModal .settings-modal-content { padding: 14px; }
+    html[data-ui="modern"] #settingsModal #uiStyleSection { grid-template-columns: 1fr; }
+    html[data-ui="modern"] #settingsModal #uiStyleSection > .settings-group-label,
+    html[data-ui="modern"] #settingsModal .ui-style-switch { grid-column: 1; }
+    html[data-ui="modern"] #settingsModal .brand-setting-text span { display: none; }
+}
+
+/* Settings use a persistent left rail at every window size. */
+html[data-ui="modern"] #settingsModal .settings-body {
+    grid-template-columns: minmax(142px, 176px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 20px;
+}
+
+html[data-ui="modern"] #settingsModal .settings-tabs {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+    padding: 4px 12px 4px 0;
+    border-right: 1px solid var(--stroke);
+    border-bottom: 0;
+}
+
+html[data-ui="modern"] #settingsModal .settings-tab {
+    flex: none;
+    align-items: flex-start;
+    min-height: 48px;
+    padding: 9px 12px;
+    text-align: left;
+}
+
+html[data-ui="modern"] #settingsModal .settings-tab span { font-size: 0.86rem; }
+html[data-ui="modern"] #settingsModal .settings-tab small { display: block; font-size: 0.68rem; }
+
+html[data-ui="modern"] #settingsModal #uiStyleSection {
+    display: block;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--stroke);
+}
+
+html[data-ui="modern"] #settingsModal #uiStyleHint {
+    margin: 4px 0 0;
+    font-size: 0.74rem;
+}
+
+html[data-ui="modern"] #settingsModal .settings-tabs,
+html[data-ui="modern"] #settingsModal .settings-tab,
+html[data-ui="modern"] #settingsModal .settings-panels,
+html[data-ui="modern"] #settingsModal button,
+html[data-ui="modern"] #settingsModal input,
+html[data-ui="modern"] #settingsModal select {
+    font-family: "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", sans-serif;
 }

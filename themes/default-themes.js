@@ -100,7 +100,9 @@ const THEMES = {
     },
 
     liquidGlass: {
-        name: 'Windows Acrylic',
+        // The name shown in Settings depends on the system (main.js picks it): macOS calls this material Liquid Glass.
+        name: 'Glass',
+        platformNames: { darwin: 'Liquid Glass', win32: 'Acrylic' },
         colors: { background: '#17191c', surface: '#45494d', text: '#f4f6f8', accent: '#dce3e8' },
         fonts: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', sizeBase: '14px' },
         experimental: true

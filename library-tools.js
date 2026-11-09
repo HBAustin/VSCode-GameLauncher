@@ -9,6 +9,13 @@
     /* ------------------------------------------------------------------ hooks (no edits to your other files)
        Everything the other files would have needed is done here, so ui.js and renderer.js stay exactly as you have them. */
     const gd = () => (typeof gameData === 'object' && gameData) || {};
+    const gameNameKey = (name) => String(name || '')
+        .replace(/[\u2122\u00ae\u00a9]/g, '')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .replace(/(deluxeedition|standardedition|ultimateedition|completeedition|gameoftheyearedition|goty)$/, '');
 
     // 1. Launch options travel with the launch request; imported games open their install folder.
     const rawSend = ipcRenderer.send.bind(ipcRenderer);
@@ -16,7 +23,16 @@
         try {
             if (channel === 'launch-game-process' && args[0] && gd()[args[0].id] && gd()[args[0].id].launch) {
                 const g = gd()[args[0].id];
-                args[0] = { ...args[0], options: { ...g.launch, steamAppId: g.steamMedia && g.steamMedia.appId } };
+                const inferredName = g.path && !/^[a-z][a-z\d+.-]*:\/\//i.test(g.path)
+                    && /\.exe$/i.test(g.path) ? g.path.split(/[\\/]/).pop() : '';
+                args[0] = {
+                    ...args[0],
+                    options: {
+                        ...g.launch,
+                        processName: g.launch && g.launch.processName || inferredName,
+                        steamAppId: g.steamMedia && g.steamMedia.appId
+                    }
+                };
             } else if (channel === 'open-file-location' && typeof args[0] === 'string') {
                 const g = Object.values(gd()).find(x => x && x.path === args[0] && x.folder);
                 if (g) args[0] = g.folder;
@@ -34,27 +50,6 @@
         try { saveToDisk(); } catch (e) {}
     });
 
-    // 3. "Launch options..." in the right-click menu (ui.js builds the menu; this adds one row to it).
-    new MutationObserver((records) => {
-        for (const r of records) for (const n of r.addedNodes) {
-            if (!(n instanceof HTMLElement) || !n.classList.contains('ctx-menu')) continue;
-            const card = document.querySelector('.game-card.ctx-target');
-            const anchor = n.querySelector('.ctx-item[data-action="open-customize"]');
-            if (!card || !anchor || n.querySelector('[data-action="launch-options"]')) continue;
-            const id = card.id;
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'ctx-item';
-            b.setAttribute('role', 'menuitem');
-            b.dataset.action = 'launch-options';
-            b.textContent = 'Launch options\u2026';
-            b._item = { action: 'launch-options', run: () => window.hbLaunchOptions(id) };
-            anchor.after(b);
-            const rect = n.getBoundingClientRect();
-            if (rect.bottom > window.innerHeight - 10) n.style.top = Math.max(10, window.innerHeight - rect.height - 10) + 'px';
-        }
-    }).observe(document.body, { childList: true });
-
     /* ------------------------------------------------------------------ styles */
     const css = document.createElement('style');
     css.textContent = `
@@ -69,12 +64,16 @@
     .hb-pop small { color: var(--muted); font-size: .76rem; }
 
     .hb-dialog { position: fixed; inset: 0; z-index: 3100; display: none; align-items: center; justify-content: center;
-        background: rgba(0,0,0,.5); -webkit-app-region: no-drag; }
+        padding: 16px; background: rgba(0,0,0,.5); -webkit-app-region: no-drag; }
     .hb-dialog.open { display: flex; }
-    .hb-card { width: min(92vw, 560px); max-height: min(86vh, 640px); display: flex; flex-direction: column; gap: 14px; padding: 22px 24px;
+    .hb-card { box-sizing: border-box; width: min(92vw, 560px); max-height: min(86vh, 640px); display: flex; flex-direction: column; gap: 14px; padding: 22px 24px;
         border-radius: var(--r-1, 16px); color: var(--text); text-align: left;
         background: color-mix(in srgb, var(--m-surface, #17171a) 96%, #000); border: 1px solid var(--stroke-strong);
         box-shadow: 0 30px 80px rgba(0,0,0,.6); animation: hb-in .2s var(--ease, ease); }
+    .hb-options-card { min-height: 0; overflow: hidden; }
+    .hb-options-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto;
+        overscroll-behavior: contain; padding: 1px 3px 4px 1px; }
+    .hb-options-card .hb-foot { flex: none; }
     .hb-card h2 { margin: 0; font-size: 1.25rem; font-weight: 780; letter-spacing: -.02em; }
     .hb-card p { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.45; }
     .hb-foot { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
@@ -238,9 +237,14 @@
         open(importDlg);
 
         const games = Object.values(typeof gameData === 'object' ? gameData : {});
-        const existing = { paths: games.flatMap(g => [g.path, g.folder]).filter(Boolean), names: games.map(g => g.name).filter(Boolean) };
+        const existing = {
+            paths: games.flatMap(g => [g.path, g.folder]).filter(Boolean),
+            names: games.map(g => g.name).filter(Boolean),
+            steamAppIds: games.map(g => g.steamAppId || g.steamMedia && g.steamMedia.appId || g.launch && g.launch.steamAppId).filter(Boolean)
+        };
         const res = await ipcRenderer.invoke('scan-installed-games', existing);
-        found = (res && res.games) || [];
+        const existingNames = new Set(Object.values(gd()).map(game => gameNameKey(game && game.name)).filter(Boolean));
+        found = ((res && res.games) || []).filter(game => !existingNames.has(gameNameKey(game && game.name)));
         if (!found.length) {
             list.replaceChildren(el('div', { class: 'hb-empty', text: res && res.success === false
                 ? 'The scan failed: ' + res.error
@@ -279,6 +283,8 @@
             el('option', { value: 'steam', text: 'Through Steam' }),
             el('option', { value: 'direct', text: 'Directly (the file itself)' }));
         const modeNote = el('span', { class: 'hb-note' });
+        const processName = el('input', { class: 'hb-input', type: 'text', placeholder: 'e.g. game.exe', autocomplete: 'off', spellcheck: 'false' });
+        const processNameNote = el('span', { class: 'hb-note', text: 'Needed for Steam games. Use the game process executable name, not Steam.exe.' });
         const cwd = el('input', { class: 'hb-input', type: 'text', placeholder: 'Leave empty to use the game\u2019s own folder', autocomplete: 'off', spellcheck: 'false' });
         const cwdBrowse = el('button', { class: 'hb-btn', type: 'button', text: 'Browse\u2026' });
         const admin = el('input', { type: 'checkbox' });
@@ -292,25 +298,29 @@
             el('span', {}, 'Run as administrator', el('small', { text: 'Windows asks for permission each time the game starts.' })));
         if (!isWin) adminRow.hidden = true;
 
-        const card = el('div', { class: 'hb-card', role: 'dialog', 'aria-label': 'Launch options' },
-            title, sub,
+        const optionsBody = el('div', { class: 'hb-options-body' },
             el('div', { class: 'hb-field' }, el('label', { text: 'Start the game' }), mode, modeNote),
             el('div', { class: 'hb-field' }, el('label', { text: 'Launch arguments' }), args, argsNote),
             el('div', { class: 'hb-field' }, el('label', { text: 'Start in folder' }),
                 el('div', { style: 'display:flex;gap:8px' }, cwd, cwdBrowse)),
             el('div', { class: 'hb-field' }, el('label', { text: 'Wait before starting (seconds)' }), delay),
+            el('div', { class: 'hb-field' }, el('label', { text: 'FPS overlay process name (optional)' }), processName, processNameNote),
             adminRow,
             el('label', { class: 'hb-check' }, minimize,
-                el('span', {}, 'Minimise the launcher when the game starts')),
+                el('span', {}, 'Minimise the launcher when the game starts')));
+        const card = el('div', { class: 'hb-card hb-options-card', role: 'dialog', 'aria-label': 'Launch options' },
+            title, sub,
+            optionsBody,
             el('div', { class: 'hb-foot' }, reset, el('span', { class: 'spacer' }), cancel, save));
         optDlg = dialog(card);
         optDlg._dismiss = () => close(optDlg);
         cancel.onclick = optDlg._dismiss;
-        optUI = { args, argsNote, mode, modeNote, cwd, delay, admin, minimize, title, sub, save, reset };
+        optUI = { args, argsNote, mode, modeNote, cwd, delay, admin, minimize, processName, title, sub, save, reset };
 
         const fill = (o) => {
             args.value = o.args || ''; delay.value = o.delay || 0;
             mode.value = o.mode || 'auto'; cwd.value = o.cwd || '';
+            processName.value = o.processName || '';
             admin.checked = !!o.admin; minimize.checked = !!o.minimize;
         };
         optUI.fill = fill;
@@ -325,9 +335,10 @@
                 admin: isWin && admin.checked,
                 minimize: minimize.checked,
                 mode: mode.value,
-                cwd: cwd.value.trim()
+                cwd: cwd.value.trim(),
+                processName: processName.value.trim()
             };
-            if (o.args || o.delay || o.admin || o.minimize || o.cwd || o.mode !== 'auto') g.launch = o; else delete g.launch;
+            if (o.args || o.delay || o.admin || o.minimize || o.cwd || o.mode !== 'auto' || o.processName) g.launch = o; else delete g.launch;
             saveToDisk();
             close(optDlg);
         };
@@ -352,7 +363,9 @@
         optUI.argsNote.textContent = argsHint(g.path);
         optUI.modeNote.textContent = 'Automatic starts Steam games through Steam, which many need to run at all, and everything else directly. '
             + 'If something won\u2019t start, try the other choices.';
-        optUI.fill(g.launch || {});
+        const inferredName = g.path && !/^[a-z][a-z\d+.-]*:\/\//i.test(g.path)
+            && /\.exe$/i.test(g.path) ? g.path.split(/[\\/]/).pop() : '';
+        optUI.fill({ ...g.launch, processName: g.launch && g.launch.processName || inferredName });
         open(optDlg);
         setTimeout(() => optUI.args.focus(), 30);
     };
@@ -398,8 +411,10 @@
 
     function steamAppIdFor(g) {
         if (!g) return null;
+        if (/^\d+$/.test(String(g.steamAppId || ''))) return String(g.steamAppId);
         const m = String(g.path || '').match(/^steam:\/\/rungameid\/(\d+)/i);
         if (m) return m[1];
+        if (g.steamMedia && /^\d+$/.test(String(g.steamMedia.appId || ''))) return String(g.steamMedia.appId);
         // A game added by hand from inside a Steam library folder: use the id Steam's store gave it
         const inSteam = /[\\/]steamapps[\\/]common[\\/]/i.test(String(g.path || '')) || /\.url$/i.test(String(g.path || ''));
         return inSteam && g.steamMedia && g.steamMedia.appId ? String(g.steamMedia.appId) : null;
@@ -438,6 +453,8 @@
         pill.innerHTML = DOWN_SVG + `<span>${label}</span>` + (st.state === 'update' ? '' : `<span class="bar"><i style="width:${pct}%"></i></span>`)
             + (st.state === 'update' ? '<span style="color:var(--muted);font-weight:550">Open Steam</span>' : '');
     }
+    applyPill();
+    document.addEventListener('hb-game-selected', applyPill);
 
     let upBusy = false;
     async function refreshUpdates() {
@@ -447,17 +464,24 @@
             const ids = [...new Set(Object.keys(gd()).map(k => steamAppIdFor(gd()[k])).filter(Boolean))];
             upStatus = ids.length ? (await ipcRenderer.invoke('steam-update-status', ids)) || {} : {};
             applyBadges(); applyPill();
-        } catch (e) { /* Steam not installed or the check failed: show nothing */ }
-        upBusy = false;
+            document.dispatchEvent(new CustomEvent('hb-steam-status-updated', { detail: upStatus }));
+        } catch (e) {
+            console.warn('Could not refresh Steam install/update status:', e);
+        } finally {
+            upBusy = false;
+        }
     }
     const anyUpdating = () => Object.values(upStatus).some(s => s && s.state === 'updating');
-    (function tick() { refreshUpdates(); setTimeout(tick, anyUpdating() ? 5000 : 45000); })();
+    (async function tick() {
+        await refreshUpdates();
+        setTimeout(tick, anyUpdating() ? 5000 : Object.keys(gd()).length ? 45000 : 5000);
+    })();
     window.addEventListener('focus', refreshUpdates);
+    document.addEventListener('hb-library-loaded', refreshUpdates);
     // The list is rebuilt whenever it changes (sort, search, import): put the badges back each time
     const libEl = document.getElementById('library');
     if (libEl) {
         let t = null;
         new MutationObserver(() => { clearTimeout(t); t = setTimeout(applyBadges, 60); }).observe(libEl, { childList: true });
     }
-    setInterval(applyPill, 500);   // follows the selected game
 })();

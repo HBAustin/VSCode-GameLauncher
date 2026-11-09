@@ -7,8 +7,7 @@
         /* Set interface style, corner mode and OS before first paint so there is no flash. */
         (function () {
             var d = document.documentElement;
-            try { d.dataset.ui = localStorage.getItem('hb-ui') === 'classic' ? 'classic' : 'modern'; }
-            catch (e) { d.dataset.ui = 'modern'; }
+            d.dataset.ui = 'modern';
             try { d.dataset.corners = localStorage.getItem('hb-corners') === 'soft' ? 'soft' : 'system'; }
             catch (e) { d.dataset.corners = 'system'; }
             var os = 'other';
@@ -330,6 +329,8 @@
             transform: translateY(-4px) scale(1.015);
             box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
         }
+        .game-card.not-installed { filter: grayscale(0.9); opacity: 0.58; }
+        .game-card.not-installed:hover { filter: grayscale(0.55); opacity: 0.78; }
         .game-card:active { transform: translateY(-1px) scale(0.99); }
         
         .fallback-title { 
@@ -955,14 +956,13 @@
         <div id="library"></div>
         
         <div id="detail-panel">
-            <div id="dp-empty-state" class="dp-empty">Select a game from the list</div>
+            <div id="dp-empty-state" class="dp-empty">
+                <span class="dp-empty-eyebrow">YOUR LIBRARY</span>
+                <h1>Ready when you are.</h1>
+                <p>Select a game to see its details, or add a title to get started.</p>
+            </div>
             <div id="dp-content-state" style="display: none; flex-direction: column;">
                 <div class="dp-hero" id="dpHero">
-                    <div class="dp-content">
-                        <div class="dp-title-block">
-                            <h1 class="dp-title" id="dpTitle">Game Name</h1>
-                        </div>
-                    </div>
                     <div id="dpLogoContainer" style="position: absolute; left: 2rem; bottom: 2rem; z-index: 4; display: flex; align-items: center; gap: 12px;"></div>
                 </div>
                 <div class="dp-action-row">
@@ -976,16 +976,24 @@
                         <button class="dash-btn play-themed-btn" id="dashBtnChangePath"> Change Path</button>
                     </div>
                 </div>
+                <section class="dp-profile" aria-label="Game genres" hidden>
+                    <span class="dp-game-genres" id="dpGameGenres"></span>
+                </section>
                 <section class="dp-screenshots" id="dpScreenshots" aria-labelledby="dpScreenshotsTitle">
                     <div class="dp-media-heading">
-                        <h2 id="dpScreenshotsTitle">Screenshots</h2>
-                        <span class="dp-game-genres" id="dpGameGenres"></span>
+                        <div class="dp-section-title">
+                            <span class="dp-section-eyebrow">IN-GAME MOMENTS</span>
+                            <h2 id="dpScreenshotsTitle">Screenshots</h2>
+                        </div>
                     </div>
                     <div class="dp-screenshot-status" id="dpScreenshotStatus">Looking for screenshots...</div>
                     <div class="dp-screenshot-grid" id="dpScreenshotGrid"></div>
                 </section>
                 <section class="dp-related" id="dpRelated" aria-labelledby="dpRelatedTitle" hidden>
-                    <h2 id="dpRelatedTitle">Suggested games</h2>
+                    <div class="dp-section-title">
+                        <span class="dp-section-eyebrow">KEEP EXPLORING</span>
+                        <h2 id="dpRelatedTitle">You might also like</h2>
+                    </div>
                     <div class="related-games-empty" id="relatedGamesEmpty" hidden></div>
                     <div class="related-games-grid" id="relatedGamesGrid"></div>
                 </section>
@@ -1027,7 +1035,7 @@
                         <h3>Logo</h3>
                         <p>Logo images are displayed on top of the background image on game details pages.</p>
                         <div id="logoLivePreview" class="logo-live-preview"></div>
-                        <p class="logo-preview-hint">Choose a preset, or select Custom and drag the logo. Snap uses a 10% grid.</p>
+                        <p class="logo-preview-hint">Choose a preset, or select Custom and drag the logo. Snap uses a 5% grid.</p>
                         <label for="gameLogoScale" style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.75rem; color: #888;">
                             <span>Scale</span><span id="gameLogoScaleValue">100%</span>
                         </label>
@@ -1089,6 +1097,14 @@
                         <span>Artwork</span>
                         <small>SteamGridDB access</small>
                     </button>
+                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsSteam" data-settings-tab="steam">
+                        <span>Steam Library</span>
+                        <small>Sync owned games</small>
+                    </button>
+                    <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsEpic" data-settings-tab="epic">
+                        <span>Epic Library</span>
+                        <small>Sync Epic games</small>
+                    </button>
                     <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settingsLayout" data-settings-tab="layout">
                         <span>Display</span>
                         <small>Scale and details</small>
@@ -1119,6 +1135,39 @@
                         <label class="settings-field-label" for="steamGridApiKey">SteamGridDB API key</label>
                         <input class="settings-text-input" type="text" id="steamGridApiKey" placeholder="Paste API key" autocomplete="off">
                     </section>
+                    <section class="settings-panel" id="settingsSteam" role="tabpanel" data-settings-panel="steam" hidden>
+                        <h3>Steam library</h3>
+                        <p class="settings-panel-intro">Sync your owned games without downloading them. Steam installs games when you select Install. Game details must be public, and the same account must be signed in to the Steam client.</p>
+                        <p class="settings-panel-intro">Steam's public library API does not list games shared with you. Installed shared games may be found with the launcher's installed-games importer; Steam does not provide a supported API to list your full shared library.</p>
+                        <label class="settings-field-label" for="steamProfile">SteamID64 or profile URL</label>
+                        <input class="settings-text-input" type="text" id="steamProfile" placeholder="7656119… or steamcommunity.com/id/…" autocomplete="off" spellcheck="false">
+                        <label class="settings-field-label" for="steamWebApiKey">Steam Web API key</label>
+                        <input class="settings-text-input" type="password" id="steamWebApiKey" placeholder="Paste your Steam Web API key" autocomplete="off" spellcheck="false">
+                        <p class="settings-panel-intro">The key is saved in this user account’s launcher settings and sent only to Steam’s API. Get a key from <a href="https://steamcommunity.com/dev/apikey" id="steamApiKeyLink">steamcommunity.com/dev/apikey</a>.</p>
+                        <label class="settings-toggle" for="steamIncludeFreeGames">
+                            <input type="checkbox" id="steamIncludeFreeGames" checked>
+                            <span>Include free games I have played</span>
+                        </label>
+                        <div class="settings-path-row">
+                            <button class="menu-btn settings-save-btn" id="syncSteamLibraryBtn" type="button">Sync Steam library</button>
+                            <span class="settings-panel-intro" id="steamSyncStatus" role="status" aria-live="polite"></span>
+                        </div>
+                    </section>
+                    <section class="settings-panel" id="settingsEpic" role="tabpanel" data-settings-panel="epic" hidden>
+                        <h3>Epic library</h3>
+                        <p class="settings-panel-intro">Full-library access uses the community Legendary tool because Epic does not publish a general library API. Download the standalone executable from <a href="https://github.com/derrod/legendary/releases" id="legendaryDownloadLink">Legendary releases</a>, then select it here. Legendary is GPLv3-licensed and is not bundled. The launcher never asks for your Epic password.</p>
+                        <p class="settings-panel-intro">Sign in through Legendary, then sync your library. Legendary handles Epic authentication locally; its unofficial Epic integration may change if Epic changes its services. Games you choose to install or launch are handed to Legendary.</p>
+                        <label class="settings-field-label" for="legendaryPath">Legendary executable</label>
+                        <div class="settings-path-row">
+                            <input class="settings-text-input" type="text" id="legendaryPath" placeholder="Select legendary.exe" autocomplete="off" spellcheck="false">
+                            <button class="menu-btn" id="browseLegendaryBtn" type="button">Browse</button>
+                        </div>
+                        <div class="settings-path-row epic-library-actions">
+                            <button class="menu-btn settings-save-btn" id="epicAuthBtn" type="button">Sign in with Epic</button>
+                            <button class="menu-btn settings-save-btn" id="syncEpicLibraryBtn" type="button">Sync Epic library</button>
+                            <span class="settings-panel-intro" id="epicSyncStatus" role="status" aria-live="polite"></span>
+                        </div>
+                    </section>
                     <section class="settings-panel" id="settingsLayout" role="tabpanel" data-settings-panel="layout" hidden>
                         <h3>Display preferences</h3>
                         <p class="settings-panel-intro">Adjust the interface size and how game details are presented.</p>
@@ -1138,6 +1187,20 @@
                                 <span>Show game logos over detail artwork</span>
                             </label>
                         </div>
+                        <div class="settings-group">
+                            <p class="settings-group-label">In-game FPS overlay</p>
+                            <p class="settings-panel-intro">Uses PresentMon on Windows to read frame presentation data. The overlay appears while a monitored game is running. Press Ctrl+Shift+O to hide or show it.</p>
+                            <label class="settings-toggle" for="fpsOverlayEnabled">
+                                <input type="checkbox" id="fpsOverlayEnabled">
+                                <span>Enable the FPS overlay</span>
+                            </label>
+                            <label class="settings-field-label" for="presentMonPath">PresentMon executable</label>
+                            <div class="settings-path-row">
+                                <input class="settings-text-input" type="text" id="presentMonPath" placeholder="Select PresentMon.exe" autocomplete="off">
+                                <button class="menu-btn" id="browsePresentMonBtn" type="button">Browse</button>
+                            </div>
+                            <p class="settings-panel-intro">Install PresentMon separately, then select its command-line executable here. Steam games also need their game process name set in Launch Options.</p>
+                        </div>
                     </section>
                 </div>
             </div>
@@ -1156,7 +1219,6 @@
 
     <script src="renderer.js"></script>
     <script src="glass.js"></script>
-    <script src="contrast.js"></script>
     <script src="ui.js"></script>
     <script src="titlebar.js"></script>
     <script src="library-tools.js"></script>

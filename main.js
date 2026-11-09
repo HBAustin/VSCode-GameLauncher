@@ -1,9 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const axios = require('axios');
 const { pathToFileURL } = require('url');
+const { parseLegendaryGames, parseLegendaryInstalledGames } = require('./epic-legendary');
+const FpsOverlay = require('./Overlay/controller');
 const BASE_THEMES = require('./themes/default-themes.js');
 const THEMES = {
     // Built-in "Dynamic" theme: the background and accent colour follow the selected game's artwork (see ui.js).
@@ -26,16 +28,27 @@ const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 let win = null;
 let pickerWin = null;
+let contextMenuWin = null;
+let activeContextMenu = null;
+let fpsOverlay = null;
 
 function createWindow() {
     app.setAppUserModelId('com.hb.launcher.v1');
 
     const isMac = process.platform === 'darwin';
     const isWin = process.platform === 'win32';
+    const { x: workX, y: workY, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
+    const margin = 32;
+    const width = Math.min(1100, workWidth - margin * 2);
+    const height = Math.min(780, workHeight - margin * 2);
+    const minWidth = Math.min(800, width);
+    const minHeight = Math.min(600, height);
+    const x = Math.round(workX + (workWidth - width) / 2);
+    const y = Math.round(workY + (workHeight - height) / 2);
 
     // Window material (Liquid Glass / vibrancy on macOS, Acrylic/Mica on Windows) is handled by glass-main.js
     win = new BrowserWindow(glass.windowOptions({
-        width: 1200, height: 850, minWidth: 800, minHeight: 600,
+        x, y, width, height, minWidth, minHeight,
         frame: true,
         titleBarStyle: isMac ? 'hiddenInset' : isWin ? 'hidden' : 'default',
         titleBarOverlay: isWin ? {
@@ -174,6 +187,7 @@ async function fetchSteamGridArtwork(gameName, apiKey, gameId) {
 }
 
 app.whenReady().then(() => {
+    fpsOverlay = new FpsOverlay();
     protocol.handle('local-image', async (request) => {
         try {
             const urlObj = new URL(request.url);
@@ -200,9 +214,6 @@ app.on('window-all-closed', () => {
 });
 
 const importer = require('./importer-main');
-ipcMain.on('launch-game-process', (event, { executablePath, options }) => {
-    importer.launch(executablePath, options, () => win);
-});
 
 ipcMain.handle('get-user-data-path', () => {
     const userLibraryPath = path.join(app.getPath('userData'), 'library.json');
@@ -232,20 +243,114 @@ ipcMain.on('set-window-material', (event, material) => {
     glass.applyThemeMaterial(win, material);
 });
 
+ipcMain.on('game-context-menu-action', (event, action) => {
+    const active = activeContextMenu;
+    if (!active || event.sender !== active.window.webContents) return;
+    activeContextMenu = null;
+    if (!active.window.isDestroyed()) active.window.close();
+    if (active.owner.isDestroyed()) return;
+
+    if (action === 'launch-options') {
+        active.owner.send('context-menu-launch-options', active.game.id);
+        return;
+    }
+
+    const channels = {
+        play: 'context-menu-play',
+        favorite: 'context-menu-fav',
+        rename: 'context-menu-rename',
+        customize: 'context-menu-customize',
+        location: 'context-menu-open-location',
+        path: 'context-menu-change-path',
+        remove: 'context-menu-remove'
+    };
+    const channel = channels[action];
+    if (!channel) return;
+    if (action !== 'remove') {
+        active.owner.send(channel, active.game);
+        return;
+    }
+
+    const parent = BrowserWindow.fromWebContents(active.owner);
+    const options = {
+        type: 'warning',
+        buttons: ['Cancel', 'Remove'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Remove game',
+        message: `Remove ${active.game.name} from your library?`,
+        detail: 'The game files will not be deleted.'
+    };
+    const confirmation = parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
+    confirmation.then(({ response }) => {
+        if (response === 1 && !active.owner.isDestroyed()) active.owner.send(channel, active.game);
+    }).catch((err) => console.error('Failed to confirm game removal:', err));
+});
+
 ipcMain.on('show-game-context-menu', (event, gameData) => {
-    const template = [
-        { label: `Play ${gameData.name}`, click: () => event.sender.send('context-menu-play', gameData) },
-        { type: 'separator' },
-        { label: gameData.favorite ? 'Unfavorite' : 'Favorite', click: () => event.sender.send('context-menu-fav', gameData) },
-        { label: 'Rename Game', click: () => event.sender.send('context-menu-rename', gameData) },
-        { label: 'Customize Artwork...', click: () => event.sender.send('context-menu-customize', gameData) },
-        { type: 'separator' },
-        { label: 'Open File Location', click: () => event.sender.send('context-menu-open-location', gameData) },
-        { label: 'Change Game Path', click: () => event.sender.send('context-menu-change-path', gameData) },
-        { type: 'separator' },
-        { label: 'Remove from Library', click: () => event.sender.send('context-menu-remove', gameData) }
-    ];
-    Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    if (contextMenuWin && !contextMenuWin.isDestroyed()) contextMenuWin.close();
+
+    const owner = event.sender;
+    const game = { ...gameData, id: String(gameData.id || '') };
+    const width = 270;
+    const height = 382;
+    const display = screen.getDisplayNearestPoint({ x: gameData.x, y: gameData.y });
+    const { x: left, y: top, width: areaWidth, height: areaHeight } = display.workArea;
+    const menuWidth = Math.min(width, areaWidth);
+    const menuHeight = Math.min(height, areaHeight);
+    const x = Math.max(left, Math.min(
+        gameData.x + menuWidth > left + areaWidth ? gameData.x - menuWidth : gameData.x,
+        left + areaWidth - menuWidth
+    ));
+    const y = Math.max(top, Math.min(
+        gameData.y + menuHeight > top + areaHeight ? gameData.y - menuHeight : gameData.y,
+        top + areaHeight - menuHeight
+    ));
+    const menuWindow = new BrowserWindow({
+        x, y, width: menuWidth, height: menuHeight,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        hasShadow: true,
+        backgroundColor: '#00000000',
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
+    });
+    contextMenuWin = menuWindow;
+    activeContextMenu = { window: menuWindow, owner, game };
+    menuWindow.setAlwaysOnTop(true, 'pop-up-menu');
+    menuWindow.loadFile('context-menu.html');
+    menuWindow.webContents.once('did-finish-load', () => {
+        if (menuWindow.isDestroyed()) return;
+        const remoteIcon = /^https:\/\/media\.steampowered\.com\/steamcommunity\/public\/images\/apps\/\d+\/[a-f0-9]+\.jpg$/i.test(String(game.icon || ''));
+        const icon = remoteIcon
+            ? game.icon
+            : game.icon ? `local-image://asset?path=${encodeURIComponent(game.icon)}` : '';
+        menuWindow.webContents.send('init-game-context-menu', {
+            name: game.name,
+            favorite: !!game.favorite,
+            icon,
+            playLabel: game.playLabel,
+            playDisabled: !!game.playDisabled,
+            theme: game.theme || {}
+        });
+    });
+    menuWindow.on('blur', () => {
+        if (!menuWindow.isDestroyed()) menuWindow.close();
+    });
+    const closeWhenOwnerDestroyed = () => {
+        if (!menuWindow.isDestroyed()) menuWindow.close();
+    };
+    owner.on('destroyed', closeWhenOwnerDestroyed);
+    menuWindow.on('closed', () => {
+        owner.removeListener('destroyed', closeWhenOwnerDestroyed);
+        if (contextMenuWin === menuWindow) contextMenuWin = null;
+        if (activeContextMenu && activeContextMenu.window === menuWindow) activeContextMenu = null;
+    });
 });
 
 function openPickerWindow(gameData, type) {
@@ -305,7 +410,23 @@ ipcMain.handle('search-steamgriddb-games', async (event, gameName) => {
             slug: item.slug || '',
             releaseDate: item.released || item.release_date || item.releaseDate || ''
         }));
-        return { success: true, data: parsed };
+        const gamesWithIcons = await Promise.all(parsed.map(async game => {
+            if (game.thumb) return game;
+            try {
+                const iconRes = await axios.get(
+                    `https://www.steamgriddb.com/api/v2/icons/game/${game.id}`,
+                    { headers }
+                );
+                const icon = iconRes.data.success && iconRes.data.data.length
+                    ? iconRes.data.data[0].thumb || iconRes.data.data[0].url
+                    : '';
+                return { ...game, thumb: icon };
+            } catch (err) {
+                console.warn(`Failed to fetch SteamGridDB icon for ${game.name}:`, err.message);
+                return game;
+            }
+        }));
+        return { success: true, data: gamesWithIcons };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -597,6 +718,129 @@ ipcMain.handle('save-settings', async (event, settings) => {
     return { success };
 });
 
+ipcMain.handle('select-presentmon-executable', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || undefined, {
+        properties: ['openFile'],
+        filters: [{ name: 'PresentMon executable', extensions: ['exe'] }]
+    });
+    return canceled || filePaths.length === 0 ? null : filePaths[0];
+});
+
+ipcMain.handle('select-legendary-executable', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || undefined, {
+        properties: ['openFile'],
+        filters: process.platform === 'win32' ? [{ name: 'Legendary executable', extensions: ['exe'] }] : []
+    });
+    return canceled || filePaths.length === 0 ? null : filePaths[0];
+});
+
+function getLegendaryExecutable() {
+    const executable = String(loadSettings().epicLibrary?.legendaryPath || '').trim();
+    if (!executable || !fs.existsSync(executable) || !fs.statSync(executable).isFile()) {
+        throw new Error('Select the Legendary executable in Settings → Epic Library.');
+    }
+    return executable;
+}
+
+function runLegendary(executable, args) {
+    return new Promise((resolve, reject) => {
+        execFile(executable, args, {
+            encoding: 'utf8',
+            timeout: 300000,
+            maxBuffer: 32 * 1024 * 1024,
+            windowsHide: true
+        }, (error, stdout, stderr) => {
+            if (error) {
+                const detail = String(stderr || stdout || '').trim();
+                reject(new Error(detail || `Legendary failed: ${error.message}`));
+                return;
+            }
+            resolve(String(stdout || ''));
+        });
+    });
+}
+
+ipcMain.handle('sync-epic-library', async () => {
+    const executable = getLegendaryExecutable();
+    const availableOutput = await runLegendary(executable, ['list', '--json']);
+    const installedOutput = await runLegendary(executable, ['list-installed', '--json']);
+    const installed = parseLegendaryInstalledGames(installedOutput);
+    const games = parseLegendaryGames(availableOutput).map((game) => ({
+        ...game,
+        installed: game.installed || installed.has(game.appName)
+    }));
+    return { games };
+});
+
+ipcMain.handle('open-legendary-auth', async () => {
+    const executable = getLegendaryExecutable();
+    if (process.platform === 'win32') {
+        const quotePowerShell = value => String(value).replace(/'/g, "''");
+        const command = `Start-Process -FilePath '${quotePowerShell(executable)}' -ArgumentList 'auth'`;
+        return new Promise((resolve, reject) => {
+            const child = spawn('powershell.exe', ['-NoProfile', '-Command', command], {
+                stdio: 'ignore',
+                windowsHide: false
+            });
+            child.once('error', (error) => {
+                console.error('Could not open Legendary sign-in console:', error);
+                reject(new Error(`Could not open Legendary sign-in. Check the selected executable: ${error.message}`));
+            });
+            child.once('spawn', () => {
+                child.unref();
+                resolve({ success: true });
+            });
+        });
+    }
+
+    const child = spawn(executable, ['auth'], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', (error) => console.error('Could not start Legendary sign-in:', error));
+    child.unref();
+    return { success: true };
+});
+
+ipcMain.handle('epic-game-action', async (event, request) => {
+    const action = request?.action;
+    const appName = String(request?.appName || '');
+    if (!['install', 'launch'].includes(action) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(appName)) {
+        throw new Error('Invalid Epic game action.');
+    }
+    const executable = getLegendaryExecutable();
+    const owner = event.sender;
+    const child = spawn(executable, [action, appName], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+    });
+    let resultSent = false;
+    const sendResult = (result) => {
+        if (resultSent) return;
+        resultSent = true;
+        if (!owner.isDestroyed()) owner.send('epic-game-action-result', { action, appName, ...result });
+    };
+    child.once('error', (error) => {
+        console.error(`Legendary ${action} failed to start:`, error);
+        sendResult({ success: false, error: error.message });
+    });
+    child.once('close', (code) => {
+        sendResult(code === 0
+            ? { success: true }
+            : { success: false, error: `Legendary ${action} exited with code ${code ?? 'unknown'}.` });
+    });
+    child.unref();
+    return { success: true };
+});
+
+ipcMain.handle('open-steam-api-key-page', async () => {
+    await shell.openExternal('https://steamcommunity.com/dev/apikey');
+    return { success: true };
+});
+
+ipcMain.handle('open-legendary-download-page', async () => {
+    await shell.openExternal('https://github.com/derrod/legendary/releases');
+    return { success: true };
+});
+
 ipcMain.handle('get-theme-preset', async (event, themeName) => THEMES[themeName] || THEMES.dark);
 
 ipcMain.handle('get-all-themes', async () => {
@@ -694,10 +938,21 @@ ipcMain.handle('select-game', async () => {
     return canceled ? null : filePaths[0];
 });
 
-ipcMain.on('open-file-location', (event, filePath) => {
-    if (!filePath || !fs.existsSync(filePath)) return;
-    if (fs.statSync(filePath).isDirectory()) shell.openPath(filePath);   // imported games point at their install folder
-    else shell.showItemInFolder(filePath);
+importer.register({
+    ipcMain, app, getWin: () => win, loadSettings, fetchSteamGridArtwork,
+    onLaunchStarting: (payload) => {
+        const layout = (loadSettings() || {}).customLayout || {};
+        if (!layout.fpsOverlayEnabled || !fpsOverlay) return;
+        const launchPath = payload && payload.executablePath;
+        const inferredName = launchPath && !/^[a-z][a-z\d+.-]*:\/\//i.test(launchPath)
+            && path.extname(launchPath).toLowerCase() === '.exe'
+            ? path.basename(launchPath)
+            : '';
+        const processName = payload && payload.options && payload.options.processName || inferredName;
+        fpsOverlay.start({ executable: layout.presentMonPath, processName });
+    }
 });
 
-importer.register({ ipcMain, app, getWin: () => win, loadSettings, fetchSteamGridArtwork });
+app.on('before-quit', () => {
+    if (fpsOverlay) fpsOverlay.dispose();
+});

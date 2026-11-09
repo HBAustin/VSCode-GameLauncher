@@ -1,16 +1,13 @@
 /**
  * ui.js (renderer). Load AFTER renderer.js.
  * Helpers for the Modern interface. Nothing here touches your game data or renderer.js state.
- *   - Builds the Modern layout (top bar, library header, bottom bar) by moving existing elements,
- *     and puts them back for the Minimal style
- *   - Interface style switch (Modern / Minimal), remembered between launches
+ *   - Builds the Modern layout (top bar, library header with filters, bottom bar) by moving existing elements
  *   - Launcher logo button (user's own image) + menu
  *   - Controller-support icon for the selected game
  *   - "Dynamic" theme: ambient backdrop and accent colour follow the selected game's artwork
  *   - Theme-aware surface colours, in-app right-click menu, resizable game list
  */
 (() => {
-    const KEY = 'hb-ui';
     const BRAND_KEY = 'hb-brand';
     const CTRL_KEY = 'hb-controller';
     const root = document.documentElement;
@@ -19,12 +16,6 @@
     let ipc = null;
     let fs = null;
     try { ipc = require('electron').ipcRenderer; fs = require('fs'); } catch (_) { /* no Node access */ }
-
-    const readStyle = () => {
-        try { return localStorage.getItem(KEY) === 'classic' ? 'classic' : 'modern'; }
-        catch (_) { return 'modern'; }
-    };
-    const currentStyle = () => (root.dataset.ui === 'classic' ? 'classic' : 'modern');
 
     // ======================================================================
     // Colour helpers
@@ -128,7 +119,8 @@
         let onSurface;
         if (id === 'dynamic') {
             surface = mix([11, 11, 15], dynRGB || DEFAULT_ACCENT, 0.1);
-            onSurface = '#f2f3f5';
+            // Text follows the panel colour it sits on, so it can never end up dark on dark (or light on light)
+            onSurface = lum(surface) > 0.4 ? '#15151a' : '#f2f3f5';
         } else {
             const light = lum(parseColor(text, [0, 0, 0])) < 0.35; // dark text means a light theme
             const c = parseColor(bg, light ? [244, 244, 247] : [18, 18, 20]);
@@ -137,12 +129,45 @@
         }
         root.style.setProperty('--m-surface', `rgb(${surface.join(',')})`);
         root.style.setProperty('--m-on-surface', onSurface);
+        root.style.setProperty('--dyn-text', onSurface);
+        root.style.setProperty('--dyn-text-muted', `color-mix(in srgb, ${onSurface} 62%, transparent)`);
+        root.style.setProperty('--settings-card', `color-mix(in srgb, rgb(${surface.join(',')}) 88%, ${onSurface} 12%)`);
+        const emptySurface = id === 'dynamic'
+            ? mix(parseColor(bg, [18, 18, 20]), [8, 8, 12], 0.5)
+            : surface;
+        root.style.setProperty('--m-empty-surface', `rgb(${emptySurface.join(',')})`);
 
         // Accent used by the Dynamic theme
         const accent = dynRGB || DEFAULT_ACCENT;
         root.style.setProperty('--dyn-accent', `rgb(${accent.join(',')})`);
         root.style.setProperty('--dyn-contrast', lum(accent) > 0.179 ? '#111111' : '#ffffff');
     }
+
+    // Dynamic theme text: the preset's own text colour logic (renderer.js) works from the theme's translucent surface colour and
+    // can land on black. Here the text colour comes from --dyn-text, which syncTheme() derives from the real panel colour.
+    // Edit the selector list to include or exclude parts of the interface.
+    const dynText = document.createElement('style');
+    dynText.textContent = `
+    html[data-theme="dynamic"] { color-scheme: dark; }
+    html[data-theme="dynamic"] #librarySearch,
+    html[data-theme="dynamic"] #librarySearch::placeholder,
+    html[data-theme="dynamic"] .sort-control select,
+    html[data-theme="dynamic"] .control-btn:not(#settingsBtn),
+    html[data-theme="dynamic"] .game-card .info-overlay div,
+    html[data-theme="dynamic"] .game-card .fallback-title,
+    html[data-theme="dynamic"] .game-card .list-title,
+    html[data-theme="dynamic"] .lh-title,
+    html[data-theme="dynamic"] .dp-title,
+    html[data-theme="dynamic"] .dp-last-played-value,
+    html[data-theme="dynamic"] .menu-btn,
+    html[data-theme="dynamic"] .settings-toggle,
+    html[data-theme="dynamic"] .brand-setting,
+    html[data-theme="dynamic"] .brand-setting-text,
+    html[data-theme="dynamic"] .brand-setting-text strong,
+    html[data-theme="dynamic"] .modal-content { color: var(--dyn-text, #f2f3f5) !important; }
+    html[data-theme="dynamic"] #librarySearch::placeholder,
+    html[data-theme="dynamic"] .dp-last-played-label { color: var(--dyn-text-muted, rgba(242,243,245,.62)) !important; }`;
+    document.head.appendChild(dynText);
 
     let accentRequest = 0;
     function updateDynamic(artUrl) {
@@ -158,12 +183,9 @@
     // Search hint + shortcut
     // ======================================================================
     const search = document.getElementById('librarySearch');
-    const basePlaceholder = search ? search.placeholder : '';
     function syncPlaceholder() {
         if (!search) return;
-        search.placeholder = currentStyle() === 'modern'
-            ? `Search library   ${isMac ? '\u2318K' : 'Ctrl K'}`
-            : basePlaceholder;
+        search.placeholder = `Search library   ${isMac ? '\u2318K' : 'Ctrl K'}`;
     }
     window.addEventListener('keydown', (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && search) {
@@ -183,6 +205,9 @@
     let pane = null;
     let heading = null;
     let lhTitle = null;
+    let lhCount = null;
+    let lhFilter = null;
+    let lhLauncherFilter = null;
     let lhSort = null;
     if (library && library.parentElement) {
         pane = document.createElement('div');
@@ -192,12 +217,80 @@
         heading.id = 'libraryHeading';
         lhTitle = document.createElement('span');
         lhTitle.className = 'lh-title';
+        lhCount = document.createElement('span');
+        lhCount.className = 'lh-count';
+        lhFilter = document.createElement('button');
+        lhFilter.type = 'button';
+        lhFilter.className = 'lh-filter';
+        lhFilter.id = 'libraryFilterBtn';
+        lhFilter.addEventListener('click', () => {
+            const next = root.dataset.libraryFilter === 'installed' ? 'all' : 'installed';
+            root.dataset.libraryFilter = next;
+            try { localStorage.setItem('hb-library-filter', next); } catch (error) {
+                console.warn('Could not persist library filter:', error);
+            }
+            updateFilterButton();
+            document.dispatchEvent(new CustomEvent('hb-library-filter-changed', { detail: next }));
+        });
+        lhLauncherFilter = document.createElement('select');
+        lhLauncherFilter.className = 'lh-launcher-filter';
+        lhLauncherFilter.id = 'libraryLauncherFilter';
+        lhLauncherFilter.setAttribute('aria-label', 'Filter games by launcher');
+        [
+            ['all', 'All launchers'],
+            ['steam', 'Steam'],
+            ['epic', 'Epic'],
+            ['gog', 'GOG'],
+            ['other', 'Other']
+        ].forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            lhLauncherFilter.appendChild(option);
+        });
+        try {
+            const savedLauncher = localStorage.getItem('hb-launcher-filter');
+            if (['all', 'steam', 'epic', 'gog', 'other'].includes(savedLauncher)) {
+                root.dataset.launcherFilter = savedLauncher;
+            }
+        } catch (error) {
+            console.warn('Could not read launcher filter preference:', error);
+        }
+        lhLauncherFilter.value = root.dataset.launcherFilter || 'all';
+        lhLauncherFilter.addEventListener('change', () => {
+            const next = lhLauncherFilter.value;
+            root.dataset.launcherFilter = next;
+            try { localStorage.setItem('hb-launcher-filter', next); } catch (error) {
+                console.warn('Could not persist launcher filter:', error);
+            }
+            document.dispatchEvent(new CustomEvent('hb-library-filter-changed', { detail: next }));
+        });
         lhSort = document.createElement('span');
         lhSort.className = 'lh-sort';
         lhSort.id = 'lhSort';
-        heading.append(lhTitle, lhSort);
+        const titleGroup = document.createElement('div');
+        titleGroup.className = 'lh-title-group';
+        titleGroup.append(lhTitle, lhCount);
+        const headingTop = document.createElement('div');
+        headingTop.className = 'lh-heading-top';
+        headingTop.append(titleGroup, lhSort);
+        const headingFilters = document.createElement('div');
+        headingFilters.className = 'lh-heading-filters';
+        headingFilters.append(lhFilter, lhLauncherFilter);
+        heading.append(headingTop, headingFilters);
         library.before(pane);
         pane.append(heading, library); // #library keeps its identity, so renderer.js is unaffected
+    }
+
+    function updateFilterButton() {
+        if (!lhFilter) return;
+        const installedOnly = root.dataset.libraryFilter === 'installed';
+        lhFilter.textContent = installedOnly ? 'Installed' : 'All games';
+        lhFilter.setAttribute('aria-pressed', String(installedOnly));
+        lhFilter.setAttribute('aria-label', installedOnly
+            ? 'Show all games'
+            : 'Show installed games only');
+        lhFilter.title = installedOnly ? 'Show all games' : 'Show installed games only';
     }
 
     function updateLabel() {
@@ -209,8 +302,10 @@
             const title = card.querySelector('.list-title');
             if (title && card.title !== title.textContent) card.title = title.textContent;
         });
-        if (lhTitle) lhTitle.textContent = `Library \u00b7 ${n} ${n === 1 ? 'game' : 'games'}`;
+        if (lhTitle) lhTitle.textContent = 'Your games';
+        if (lhCount) lhCount.textContent = String(n).padStart(2, '0');
     }
+    updateFilterButton();
     if (library) {
         new MutationObserver(updateLabel).observe(library, { childList: true });
         updateLabel();
@@ -363,58 +458,35 @@
         }, { capture: true, signal });
     }
 
-    // ======================================================================
-    // Right-click menu (Modern): in-app, replays the native menu's events
-    // ======================================================================
-    const CTX_CHANNELS = {
-        play: 'context-menu-play',
-        'toggle-fav': 'context-menu-fav',
-        rename: 'context-menu-rename',
-        'open-customize': 'context-menu-customize',
-        'open-file-location': 'context-menu-open-location',
-        'change-path': 'context-menu-change-path',
-        remove: 'context-menu-remove',
-    };
-
-    function openGameMenu(id, x, y, card) {
-        if (typeof gameData === 'undefined' || !gameData[id]) return false;
-        const game = gameData[id];
-        const emit = (action) => () => { if (ipc) ipc.emit(CTX_CHANNELS[action], {}, { id, ...game }); };
-        const played = typeof formatLastPlayed === 'function' ? formatLastPlayed(game.lastPlayed) : '';
-
-        showMenu({
-            owner: 'game',
-            x, y, mark: card,
-            head: {
-                title: game.name,
-                sub: game.lastPlayed ? `Last played \u00b7 ${played}` : played,
-                image: game.icon ? `local-image://asset?path=${encodeURIComponent(game.icon)}` : '',
-            },
-            items: [
-                { action: 'play', label: 'Play', cls: 'primary', run: emit('play') },
-                'sep',
-                { action: 'toggle-fav', label: game.favorite ? 'Remove from favorites' : 'Add to favorites', run: emit('toggle-fav') },
-                { action: 'rename', label: 'Rename', run: emit('rename') },
-                { action: 'open-customize', label: 'Customize artwork', run: emit('open-customize') },
-                'sep',
-                { action: 'open-file-location', label: 'Open file location', run: emit('open-file-location') },
-                { action: 'change-path', label: 'Change game path', run: emit('change-path') },
-                'sep',
-                { action: 'remove', label: 'Remove from library', cls: 'danger', confirm: 'Click again to remove', run: emit('remove') },
-            ],
-        });
-        return true;
-    }
-
-    // Capture phase on window: runs before renderer.js's own contextmenu handler.
+    // Capture phase lets the game menu use a styled popup window that can extend beyond the launcher.
     window.addEventListener('contextmenu', (e) => {
-        if (currentStyle() !== 'modern' || !ipc) return; // Minimal keeps the native menu
+        if (!ipc) return;
         const card = e.target.closest ? e.target.closest('.game-card') : null;
         if (!card) { closeMenu(); return; }
-        if (!openGameMenu(card.id, e.clientX, e.clientY, card)) return;
+        if (typeof gameData === 'undefined' || !gameData[card.id]) return;
+        closeMenu();
         e.preventDefault();
         e.stopImmediatePropagation();
+        const colors = getComputedStyle(root);
+        const accentButton = document.getElementById('settingsBtn');
+        const surfacePanel = document.getElementById('detail-panel');
+        ipc.send('show-game-context-menu', {
+            ...gameData[card.id],
+            id: card.id,
+            x: e.screenX,
+            y: e.screenY,
+            theme: {
+                accent: accentButton ? getComputedStyle(accentButton).backgroundColor : colors.getPropertyValue('--accent').trim(),
+                contrast: accentButton ? getComputedStyle(accentButton).color : colors.getPropertyValue('--accent-contrast').trim(),
+                surface: surfacePanel ? getComputedStyle(surfacePanel).backgroundColor : colors.getPropertyValue('--m-surface').trim(),
+                text: surfacePanel ? getComputedStyle(surfacePanel).color : colors.getPropertyValue('--m-on-surface').trim(),
+            },
+        });
     }, true);
+
+    ipc?.on('context-menu-launch-options', (event, id) => {
+        if (typeof window.hbLaunchOptions === 'function') window.hbLaunchOptions(id);
+    });
 
     // ======================================================================
     // Launcher logo button
@@ -496,7 +568,7 @@
     });
 
     // ======================================================================
-    // Layout: Modern moves elements into the new bars; Minimal puts them back
+    // Layout: move the existing controls into the Modern bars
     // ======================================================================
     const controls = header ? header.querySelector('.controls') : null;
     const sortControl = document.querySelector('.sort-control');
@@ -540,20 +612,8 @@
         brandBtn.dataset.headerIdx = '5';                    // keep it reachable with a controller
     }
 
-    function enterMinimal() {
-        if (!header || !controls) return;
-        controls.append(...[search, sortControl, fullBtn, addBtn, settingsBtn].filter(Boolean));
-        if (settingsBtn) settingsBtn.style.display = '';
-        brandBtn.removeAttribute('data-header-idx');
-        header.prepend(brandBtn);
-        topbarCard.remove();
-        topbarActions.remove();
-        footerbar.remove();
-    }
-
     function applyLayout() {
-        if (currentStyle() === 'modern') enterModern();
-        else enterMinimal();
+        enterModern();
     }
 
     // Icon-only buttons need tooltips
@@ -648,15 +708,10 @@
     function buildSettings() {
         const panel = document.getElementById('settingsAppearance');
         if (!panel || document.getElementById('uiStyleSection')) return;
-        const headingEl = panel.querySelector('h3');
         const html = `
-            <div class="settings-group" id="uiStyleSection" style="margin: 0 0 20px">
-                <p class="settings-group-label">Interface style</p>
-                <div class="ui-style-switch" role="radiogroup" aria-label="Interface style">
-                    <label><input type="radio" name="uiStyle" value="modern"><span>Modern</span></label>
-                    <label><input type="radio" name="uiStyle" value="classic"><span>Minimal</span></label>
-                </div>
-                <p class="glass-status" id="uiStyleHint"></p>
+            <div class="settings-group" id="uiStyleSection">
+                <p class="settings-group-label">Interface</p>
+                <p class="glass-status" id="uiStyleHint">Modern layout is enabled.</p>
                 <div id="cornersRow">
                     <label class="settings-toggle" for="cornersToggle" style="margin-top: 12px">
                         <input type="checkbox" id="cornersToggle">
@@ -665,7 +720,7 @@
                     <p class="glass-status" id="cornersHint"></p>
                 </div>
             </div>
-            <div class="settings-group" id="brandSection" style="margin: 0 0 20px">
+            <div class="settings-group" id="brandSection">
                 <p class="settings-group-label">Launcher logo</p>
                 <div class="brand-setting">
                     <span class="brand-preview" id="brandPreview"></span>
@@ -674,27 +729,8 @@
                     <button type="button" class="menu-btn" id="brandReset">Reset</button>
                 </div>
             </div>`;
-        if (headingEl) headingEl.insertAdjacentHTML('afterend', html);
-        else panel.insertAdjacentHTML('afterbegin', html);
+        panel.insertAdjacentHTML('beforeend', html);
 
-        const hint = document.getElementById('uiStyleHint');
-        const refresh = () => {
-            const style = currentStyle();
-            panel.querySelectorAll('input[name="uiStyle"]').forEach((r) => { r.checked = r.value === style; });
-            hint.textContent = style === 'modern'
-                ? 'Cinematic layout. Applies instantly.'
-                : 'A clean, lightweight layout. Applies instantly.';
-        };
-        panel.querySelectorAll('input[name="uiStyle"]').forEach((radio) => {
-            radio.addEventListener('change', () => {
-                root.dataset.ui = radio.value;
-                try { localStorage.setItem(KEY, radio.value); } catch (_) {}
-                closeMenu();
-                applyLayout();
-                syncPlaceholder();
-                refresh();
-            });
-        });
         document.getElementById('brandChange').addEventListener('click', chooseBrand);
         document.getElementById('brandReset').addEventListener('click', resetBrand);
 
@@ -714,7 +750,6 @@
             refreshCorners();
         });
         refreshCorners();
-        refresh();
         applyBrand();
     }
 
@@ -814,13 +849,12 @@
     // ======================================================================
     // Start
     // ======================================================================
-    root.dataset.ui = readStyle();
+    root.dataset.ui = 'modern';
     applyLayout();
     syncPlaceholder();
     buildSettings();
     applyBrand();
     syncTheme();
     syncController();
-    // Theme changes happen inside renderer.js with no event, so check cheaply a few times a second.
-    setInterval(syncTheme, 300);
+    document.addEventListener('hb-settings-applied', syncTheme);
 })();

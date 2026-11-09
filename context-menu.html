@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+        body {
+            padding: 5px;
+            color: var(--menu-text, #f2f3f5);
+            font: 13px "Segoe UI Variable", "Segoe UI", -apple-system, sans-serif;
+            -webkit-app-region: no-drag;
+        }
+        .menu {
+            height: 100%;
+            overflow-y: auto;
+            padding: 5px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 14px;
+            background: color-mix(in srgb, var(--menu-surface, #17171a) 94%, #fff 6%);
+            box-shadow: 0 12px 32px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.08);
+        }
+        .heading {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-width: 0;
+            height: 42px;
+            padding: 0 7px 6px;
+            border-bottom: 1px solid rgba(255,255,255,.1);
+            margin-bottom: 4px;
+        }
+        .thumb {
+            flex: none;
+            width: 29px;
+            height: 29px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 8px;
+            background: rgba(255,255,255,.06) center / cover no-repeat;
+        }
+        .game-name {
+            min-width: 0;
+            overflow: hidden;
+            font-size: 12px;
+            font-weight: 700;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            height: 32px;
+            padding: 0 9px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+        }
+        button:hover, button:focus-visible { outline: none; background: rgba(255,255,255,.09); }
+        button svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+        button.primary {
+            margin-bottom: 3px;
+            background: var(--menu-accent, #fc9677);
+            color: var(--menu-contrast, #1a1517);
+            font-weight: 700;
+        }
+        button.primary:hover, button.primary:focus-visible { filter: brightness(1.08); background: var(--menu-accent, #fc9677); }
+        button.danger { color: #ff8585; }
+        button.danger:hover, button.danger:focus-visible { background: rgba(255,80,80,.14); }
+        .separator { height: 1px; margin: 4px 8px; background: rgba(255,255,255,.11); }
+    </style>
+</head>
+<body>
+    <main class="menu" role="menu" aria-label="Game options">
+        <div class="heading">
+            <span class="thumb" aria-hidden="true"></span>
+            <span class="game-name"></span>
+        </div>
+        <button type="button" class="primary" data-action="play" role="menuitem"><svg viewBox="0 0 24 24"><path d="m8 5 12 7-12 7z"/></svg><span>Play</span></button>
+        <div class="separator" role="separator"></div>
+        <button type="button" data-action="favorite" role="menuitem"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg><span></span></button>
+        <button type="button" data-action="rename" role="menuitem"><svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4-.8L20 7a2.1 2.1 0 0 0-3-3L5 16z"/></svg><span>Rename</span></button>
+        <button type="button" data-action="customize" role="menuitem"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Customize artwork</span></button>
+        <button type="button" data-action="launch-options" role="menuitem"><svg viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h2m4 0h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Launch options</span></button>
+        <div class="separator" role="separator"></div>
+        <button type="button" data-action="location" role="menuitem"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Open file location</span></button>
+        <button type="button" data-action="path" role="menuitem"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7L12 5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg><span>Change game path</span></button>
+        <div class="separator" role="separator"></div>
+        <button type="button" class="danger" data-action="remove" role="menuitem"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg><span>Remove from library</span></button>
+    </main>
+    <script>
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.on('init-game-context-menu', (event, data) => {
+            const root = document.documentElement;
+            const theme = data.theme || {};
+            if (theme.accent) root.style.setProperty('--menu-accent', theme.accent);
+            if (theme.contrast) root.style.setProperty('--menu-contrast', theme.contrast);
+            if (theme.surface) root.style.setProperty('--menu-surface', theme.surface);
+            if (theme.text) root.style.setProperty('--menu-text', theme.text);
+            document.querySelector('.game-name').textContent = data.name || '';
+            if (data.icon) document.querySelector('.thumb').style.backgroundImage = `url("${data.icon}")`;
+            const playButton = document.querySelector('[data-action="play"]');
+            playButton.querySelector('span').textContent = data.playLabel || 'Play';
+            playButton.disabled = !!data.playDisabled;
+            document.querySelector('[data-action="favorite"] span').textContent =
+                data.favorite ? 'Remove from favorites' : 'Add to favorites';
+            document.querySelectorAll('button[data-action]').forEach((button) => {
+                button.addEventListener('click', () => ipcRenderer.send('game-context-menu-action', button.dataset.action));
+            });
+            document.querySelector('[data-action="play"]').focus();
+        });
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') window.close();
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+            event.preventDefault();
+            const items = [...document.querySelectorAll('button[data-action]')];
+            const current = items.indexOf(document.activeElement);
+            const delta = event.key === 'ArrowDown' ? 1 : -1;
+            items[(current + delta + items.length) % items.length].focus();
+        });
+        document.addEventListener('contextmenu', (event) => event.preventDefault());
+    </script>
+</body>
+</html>

@@ -87,9 +87,10 @@ body.is-resizing .game-card { transition: none !important; }
 }
 .content-wrapper.list-mode .library-heading {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    justify-content: center;
+    gap: 8px;
     flex: none;
     padding: 10px 14px 8px;
     font-size: 0.68rem;
@@ -99,6 +100,73 @@ body.is-resizing .game-card { transition: none !important; }
     color: var(--muted);
 }
 .lh-title { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lh-heading-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+.lh-title-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lh-heading-filters {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+.lh-filter {
+    flex: none;
+    padding: 5px 9px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 650;
+    line-height: 1.2;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--stroke);
+    border-radius: 999px;
+    cursor: pointer;
+}
+.lh-filter:hover,
+.lh-filter[aria-pressed="true"] {
+    color: var(--header-text);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke));
+}
+.lh-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lh-launcher-filter {
+    flex: none;
+    width: 112px;
+    min-width: 0;
+    padding: 5px 20px 5px 8px;
+    color: var(--header-text);
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 650;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    background-color: rgba(255, 255, 255, 0.05);
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+        calc(100% - 10px) 50%,
+        calc(100% - 6px) 50%;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+    border: 1px solid var(--stroke);
+    border-radius: 999px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+.lh-launcher-filter:hover,
+.lh-launcher-filter:focus {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--stroke));
+}
+.lh-launcher-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lh-sort { flex: none; }
 .content-wrapper.list-mode .library-pane > #library {
     width: 100%;
@@ -176,6 +244,129 @@ html[data-corners="system"][data-ui="modern"] .artwork-row[data-artwork-type="ic
 html[data-corners="system"][data-ui="modern"] .brand-setting,
 html[data-corners="system"][data-ui="modern"] .ctx-item,
 html[data-corners="system"][data-ui="modern"] #contextOptionsList .menu-btn { border-radius: var(--r-2); }
+
+
+/* ==========================================================================
+   5. OPEN LIBRARY INDEX (Modern)
+   Replace the stacked header/list cards with one quiet, continuous game list.
+   ========================================================================== */
+html[data-ui="modern"] .content-wrapper.list-mode .library-pane {
+    gap: 0;
+    padding-right: 10px;
+    background: transparent;
+}
+
+html[data-ui="modern"] .content-wrapper.list-mode .library-heading {
+    height: auto;
+    min-height: 66px;
+    padding: 6px 6px 8px 8px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 5px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--header-text);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+html[data-ui="modern"] .lh-title {
+    flex: none;
+    color: var(--header-text);
+    font-size: 0.84rem;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+}
+
+html[data-ui="modern"] .lh-count {
+    flex: none;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+html[data-ui="modern"] .lh-heading-top { width: 100%; }
+html[data-ui="modern"] .lh-heading-filters { width: 100%; }
+html[data-ui="modern"] .lh-filter { padding: 5px 8px; }
+html[data-ui="modern"] .lh-launcher-filter { flex: 1 1 auto; width: auto; }
+html[data-ui="modern"] .lh-sort { margin-left: 0; }
+
+html[data-ui="modern"] .lh-sort .sort-control { width: 112px; }
+
+html[data-ui="modern"] .lh-sort .sort-control select {
+    height: 32px;
+    padding-left: 8px;
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+html[data-ui="modern"] .lh-sort .sort-control select:hover,
+html[data-ui="modern"] .lh-sort .sort-control select:focus {
+    color: var(--header-text);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--stroke);
+}
+
+html[data-ui="modern"] .lh-sort .sort-control::after { right: 9px; }
+
+@container lib (max-width: 240px) {
+    html[data-ui="modern"] .lh-sort .sort-control { width: 92px; }
+    html[data-ui="modern"] .lh-sort .sort-control select { padding-right: 22px; }
+    html[data-ui="modern"] .lh-heading-filters { gap: 4px; }
+    html[data-ui="modern"] .lh-filter { padding-left: 6px; padding-right: 6px; }
+    html[data-ui="modern"] .lh-launcher-filter { padding-left: 6px; }
+}
+
+html:root[data-ui="modern"] .content-wrapper.list-mode .library-pane > #library {
+    gap: 1px;
+    padding: 0 3px 3px 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+html[data-ui="modern"] .content-wrapper.list-mode .game-card {
+    position: relative;
+    height: 25px;
+    min-height: 25px;
+    padding: 2px 7px;
+    gap: 7px;
+    border: 0;
+    border-radius: var(--r-2, 8px);
+    transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+html[data-ui="modern"] .content-wrapper.list-mode .game-card:hover {
+    background: rgba(255, 255, 255, 0.065);
+    border: 0;
+    transform: none;
+}
+
+html[data-ui="modern"] .content-wrapper.list-mode .game-card.list-selected {
+    background: color-mix(in srgb, var(--accent) 15%, rgba(255, 255, 255, 0.035)) !important;
+    border: 0 !important;
+    box-shadow: none;
+}
+
+html[data-ui="modern"] .list-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    box-shadow: none;
+}
+
+html[data-ui="modern"] .list-title {
+    font-size: 0.74rem;
+    font-weight: 560;
+    letter-spacing: -0.01em;
+}
 
 html[data-corners="system"][data-ui="modern"] .brand-preview,
 html[data-corners="system"][data-ui="modern"] .menu-btn,

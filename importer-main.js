@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
+const axios = require('axios');
 
 /* ------------------------------------------------------------------ helpers */
 const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
@@ -90,12 +91,20 @@ async function steamLibraryDirs() {
 async function steamUpdateStates(appids) {
     const wanted = new Set((appids || []).map(String));
     const out = {};
+    for (const id of wanted) out[id] = { installed: false, present: false, state: 'ok', progress: 0 };
     for (const lib of await steamLibraryDirs()) {
         const steamapps = path.join(lib, 'steamapps');
-        for (const id of wanted) {
-            if (out[id]) continue;
-            const text = readText(path.join(steamapps, `appmanifest_${id}.acf`));
-            if (text) out[id] = updateStatus(parseAppManifest(text));
+        for (const file of listDir(steamapps)) {
+            const match = file.match(/^appmanifest_(\d+)\.acf$/i);
+            if (!match || !wanted.has(match[1]) || out[match[1]].present) continue;
+            const text = readText(path.join(steamapps, file));
+            if (!text) continue;
+            const manifest = parseAppManifest(text);
+            out[match[1]] = {
+                ...updateStatus(manifest),
+                installed: !!(manifest.state & 4),
+                present: true
+            };
         }
     }
     return out;
@@ -168,25 +177,74 @@ async function scanGog() {
 }
 
 /* ------------------------------------------------------------------ scan */
+function steamAppIdForGame(game) {
+    const launchPath = String(game && game.path || '');
+    const pathMatch = launchPath.match(/^steam:\/\/(?:rungameid|run)\/(\d+)/i);
+    const id = (game && game.steamMedia && game.steamMedia.appId)
+        || (game && game.steamAppId)
+        || (game && game.launch && game.launch.steamAppId)
+        || (game && game.steamAppId)
+        || (pathMatch && pathMatch[1])
+        || '';
+    return /^\d+$/.test(String(id)) ? String(id) : '';
+}
+
+function parseSteamOwnedGames(response) {
+    const data = response && response.response;
+    if (!data || !Array.isArray(data.games) || !Number.isFinite(Number(data.game_count))) {
+        throw new Error('Steam did not return an accessible games list. Make sure your Steam game details are public.');
+    }
+    return data.games
+        .filter((game) => game && /^\d+$/.test(String(game.appid)) && String(game.name || '').trim())
+        .map((game) => ({
+            appId: String(game.appid),
+            name: String(game.name).trim(),
+            iconHash: String(game.img_icon_url || '')
+        }));
+}
+
+function parseSteamIdInput(input) {
+    const value = String(input || '').trim();
+    const profile = value.match(/steamcommunity\.com\/(?:profiles\/(\d{17})|id\/([^/?#]+))/i);
+    const id = profile ? profile[1] : value;
+    if (/^\d{17}$/.test(id)) return { steamId: id };
+    const vanity = profile ? profile[2] : id;
+    if (/^[A-Za-z0-9_-]{2,64}$/.test(vanity)) return { vanity };
+    throw new Error('Enter a 17-digit SteamID64 or a Steam profile URL.');
+}
+
+function filterInstalledGames(games, existing = {}) {
+    // existing: { paths: [...], names: [...], steamAppIds: [...] } (a plain array of paths also works)
+    const paths = Array.isArray(existing) ? existing : (existing.paths || []);
+    const names = Array.isArray(existing) ? [] : (existing.names || []);
+    const steamAppIds = Array.isArray(existing) ? [] : (existing.steamAppIds || []);
+    const have = paths.map(norm).filter(Boolean);
+    const haveNames = new Set(names.map(titleKey).filter(Boolean));
+    const haveSteamIds = new Set(steamAppIds.map(String));
+    for (const p of paths) {
+        const appId = steamAppIdForGame({ path: p });
+        if (appId) haveSteamIds.add(appId);
+    }
+
+    const alreadyAdded = (g) => {
+        const launch = norm(g.launch), dir = norm(g.installDir);
+        const appId = g.store === 'Steam' ? (String(g.key).match(/^steam:(\d+)$/) || [])[1] : '';
+        return (appId && haveSteamIds.has(appId))
+            || haveNames.has(titleKey(g.name))
+            || have.some(p => p === launch || (dir && (p === dir || p.startsWith(dir + '/'))));
+    };
+
+    return uniqueBy(games, g => g.key)
+        .filter(g => !alreadyAdded(g))
+        .filter((g, index, available) => available.findIndex(other => titleKey(other.name) === titleKey(g.name)) === index)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
 async function scanInstalled(existing = {}) {
     const [steam, epic, gog] = await Promise.all([
         scanSteam().catch(() => []), scanEpic().catch(() => []), scanGog().catch(() => [])
     ]);
-    // existing: { paths: [...], names: [...] } (a plain array of paths also works)
-    const paths = Array.isArray(existing) ? existing : (existing.paths || []);
-    const names = Array.isArray(existing) ? [] : (existing.names || []);
-    const have = paths.map(norm).filter(Boolean);
-    const haveNames = new Set(names.map(titleKey).filter(Boolean));
-    const alreadyAdded = (g) => {
-        const launch = norm(g.launch), dir = norm(g.installDir);
-        return haveNames.has(titleKey(g.name))   // added by hand under the same title (a launcher shortcut, say)
-            || have.some(p => p === launch || (dir && (p === dir || p.startsWith(dir + '/'))));
-    };
-    // The same game can show up twice (two library folders, or two stores): keep one of each
-    const unique = uniqueBy([...steam, ...epic, ...gog], g => g.key);
-    return uniqueBy(unique, g => titleKey(g.name))
-        .filter(g => !alreadyAdded(g))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    return filterInstalledGames([...steam, ...epic, ...gog], existing);
 }
 
 /* ------------------------------------------------------------------ launch options */
@@ -300,7 +358,9 @@ async function launchNow(target, opts) {
     if (isWin && opts.admin) { startElevated(target, extra, cwd); return; }
     if (isWin && (ext === '.lnk' || ext === '.url')) { startViaShell(target, extra, cwd); return; }
 
-    const child = spawn(target, extra, { cwd, detached: true, stdio: 'ignore', windowsHide: isWin });
+    // windowsHide would also hide the program's own first window (windowed apps like Cemu then run invisibly in the
+    // background), so it is only used for scripts, whose black console window we don't want to see.
+    const child = spawn(target, extra, { cwd, detached: true, stdio: 'ignore', windowsHide: isWin && /\.(bat|cmd)$/i.test(target) });
     // Programs that need admin rights, or can't be started this way, fail here: hand them to Windows
     child.once('error', (e) => {
         console.error('Direct start failed, trying the Windows shell:', e.message);
@@ -309,10 +369,11 @@ async function launchNow(target, opts) {
     child.unref();
 }
 
-function launch(target, options, getWin) {
+function launch(target, options, getWin, onStarting) {
     if (!target) return;
     const opts = normalizeOptions(options);
     const go = async () => {
+        try { if (onStarting) onStarting(); } catch (e) { console.error('Failed to start FPS overlay:', e); }
         try { await launchNow(target, opts); } catch (e) { console.error('Failed to execute game instance:', e); }
         if (opts.minimize) { const w = getWin && getWin(); if (w && !w.isDestroyed()) w.minimize(); }
     };
@@ -320,13 +381,12 @@ function launch(target, options, getWin) {
 }
 
 /* ------------------------------------------------------------------ registration */
-function register({ ipcMain, app, getWin, loadSettings, fetchSteamGridArtwork }) {
-    // Take over launching and "open location" so main.js needs no other edits (call register after those handlers exist)
-    ipcMain.removeAllListeners('launch-game-process');
+function register({ ipcMain, app, getWin, loadSettings, fetchSteamGridArtwork, onLaunchStarting }) {
+    // Register the launch and file-location handlers after main.js has set up its app handlers.
     ipcMain.on('launch-game-process', (event, payload) => {
-        launch(payload && payload.executablePath, payload && payload.options, getWin);
+        launch(payload && payload.executablePath, payload && payload.options, getWin,
+            () => { if (onLaunchStarting) onLaunchStarting(payload); });
     });
-    ipcMain.removeAllListeners('open-file-location');
     ipcMain.on('open-file-location', (event, filePath) => {
         const { shell } = require('electron');
         if (!filePath || !exists(filePath)) return;
@@ -358,8 +418,45 @@ function register({ ipcMain, app, getWin, loadSettings, fetchSteamGridArtwork })
     });
 
     ipcMain.handle('steam-update-status', async (event, appids) => {
-        try { return await steamUpdateStates(Array.isArray(appids) ? appids.slice(0, 500) : []); }
-        catch (err) { return {}; }
+        return steamUpdateStates(Array.isArray(appids) ? appids.slice(0, 5000) : []);
+    });
+
+    ipcMain.handle('sync-steam-library', async () => {
+        const config = (loadSettings() || {}).steamLibrary || {};
+        const apiKey = String(config.apiKey || '').trim();
+        if (!apiKey) throw new Error('Add your Steam Web API key in Settings before syncing.');
+
+        const account = parseSteamIdInput(config.steamId);
+        let steamId = account.steamId;
+        if (!steamId) {
+            const resolved = await axios.get('https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/', {
+                params: { key: apiKey, vanityurl: account.vanity },
+                timeout: 15000
+            });
+            const result = resolved.data && resolved.data.response;
+            if (!result || result.success !== 1 || !/^\d{17}$/.test(String(result.steamid || ''))) {
+                throw new Error('Steam could not find that profile. Check the profile URL or custom name.');
+            }
+            steamId = String(result.steamid);
+        }
+
+        const response = await axios.get('https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/', {
+            params: {
+                key: apiKey,
+                steamid: steamId,
+                include_appinfo: true,
+                include_played_free_games: config.includePlayedFreeGames !== false
+            },
+            timeout: 30000
+        });
+        return { steamId, games: parseSteamOwnedGames(response.data) };
+    });
+
+    ipcMain.handle('install-steam-game', async (event, appId) => {
+        const id = String(appId || '');
+        if (!/^\d+$/.test(id)) throw new Error('Invalid Steam AppID.');
+        await require('electron').shell.openExternal(`steam://install/${id}`);
+        return { success: true };
     });
 
     ipcMain.handle('scan-installed-games', async (event, existingPaths) => {
@@ -406,5 +503,5 @@ function register({ ipcMain, app, getWin, loadSettings, fetchSteamGridArtwork })
 
 module.exports = {
     register, launch, scanInstalled,
-    _test: { updateStatus, titleKey, uniqueBy, norm, parseLibraryFolders, parseAppManifest, parseEpicItem, parseGogRegistry, parseArgs, normalizeOptions }
+    _test: { updateStatus, titleKey, uniqueBy, norm, parseLibraryFolders, parseAppManifest, parseEpicItem, parseGogRegistry, parseArgs, normalizeOptions, steamAppIdForGame, parseSteamOwnedGames, parseSteamIdInput, filterInstalledGames }
 };
