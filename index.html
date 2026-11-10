@@ -856,8 +856,9 @@
             transform: translateX(-50%); 
             width: max-content; 
             max-width: calc(100% - 32px);
-            background: rgba(14, 14, 16, 0.78); 
-            border: 1px solid var(--stroke-strong); 
+            color: var(--m-on-surface, var(--header-text));
+            background: color-mix(in srgb, var(--m-surface, #0e0e10) 92%, var(--accent) 8%);
+            border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--stroke-strong));
             border-radius: 999px;
             padding: 10px 28px; 
             display: flex; 
@@ -866,14 +867,28 @@
             transition: bottom 0.5s var(--ease); 
             backdrop-filter: blur(24px) saturate(160%); 
             -webkit-backdrop-filter: blur(24px) saturate(160%);
-            box-shadow: var(--shadow-lg);
+            box-shadow: 0 24px 64px color-mix(in srgb, var(--m-surface, #0e0e10) 55%, transparent);
         }
         body.controller-mode .footer { bottom: 20px; }
-        .glyph-item { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; color: #fff; }
-        .glyph { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #0a0a0a; border-radius: 50%; position: relative; font-size: 0.8rem; }
+        .glyph-item { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; color: var(--m-on-surface, var(--header-text)); }
+        .glyph { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--m-on-surface, #fff) 12%, var(--m-surface, #0e0e10)); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--stroke-strong)); border-radius: 50%; position: relative; font-size: 0.8rem; }
         .glyph.a:not(.ps-cross)::after { content: "A"; font-weight: 800; }
         .glyph.b:not(.ps-circle)::after { content: "B"; font-weight: 800; }
         .glyph.x:not(.ps-square)::after { content: "X"; font-weight: 800; }
+        .glyph.scroll-glyph {
+            flex: none;
+            border-radius: 50%;
+        }
+        .glyph.scroll-glyph span { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.01em; }
+        .glyph.combo-glyph {
+            width: auto;
+            flex: none;
+            gap: 3px;
+            padding: 0 7px;
+            border-radius: 999px;
+        }
+        .glyph.combo-glyph span { font-size: 0.56rem; font-weight: 800; letter-spacing: 0.02em; }
+        .glyph.combo-glyph .combo-plus { opacity: 0.7; }
 
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -963,7 +978,21 @@
             </div>
             <div id="dp-content-state" style="display: none; flex-direction: column;">
                 <div class="dp-hero" id="dpHero">
-                    <div id="dpLogoContainer" style="position: absolute; left: 2rem; bottom: 2rem; z-index: 4; display: flex; align-items: center; gap: 12px;"></div>
+                    <div class="dp-fullscreen-toolbar">
+                        <button class="dp-fullscreen-back" id="dpFullscreenBack" type="button" aria-label="Back to library">
+                            <span aria-hidden="true">←</span> Library
+                        </button>
+                        <label class="dp-fullscreen-sort" for="dpFullscreenSort">
+                            Sort
+                            <select id="dpFullscreenSort" aria-label="Sort games">
+                                <option value="alpha">Alphabetical</option>
+                                <option value="added">Recently Added</option>
+                                <option value="recent">Recently Played</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="dp-fullscreen-title" id="dpFullscreenTitle"></div>
+                    <div id="dpLogoContainer" style="position: absolute; inset: 0; z-index: 4; pointer-events: none;"></div>
                 </div>
                 <div class="dp-action-row">
                     <button class="dp-play-btn" id="dpPlayBtn"><span aria-hidden="true"></span><span>PLAY</span></button>
@@ -1215,6 +1244,8 @@
         <div class="glyph-item"><div id="footerAGlyph" class="glyph a"></div> <span id="aLabel">Select / Play</span></div>
         <div class="glyph-item"><div id="footerXGlyph" class="glyph x"></div> <span id="xLabel">Options</span></div>
         <div class="glyph-item"><div id="footerBGlyph" class="glyph b"></div> <span id="bLabel">Back</span></div>
+        <div class="glyph-item"><div class="glyph scroll-glyph" aria-hidden="true"><span>RS</span></div> <span>Scroll</span></div>
+        <div class="glyph-item"><div class="glyph combo-glyph" aria-hidden="true"><span>VIEW</span><span class="combo-plus">+</span><span>MENU</span></div> <span id="fullscreenComboLabel">Hold View + Menu</span></div>
     </div>
 
     <script src="renderer.js"></script>

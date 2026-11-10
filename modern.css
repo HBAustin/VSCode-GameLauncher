@@ -32,19 +32,20 @@
 
 /* Controller / gamepad focus. renderer.js toggles these classes. */
 .game-card.focused {
-    outline: 3px solid var(--accent);
-    outline-offset: 3px;
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent), 0 24px 56px rgba(0, 0, 0, 0.5);
-    z-index: 5;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    transform: none;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+    z-index: 1;
 }
 .menu-btn.focused,
 .dash-btn.focused,
 #dpPlayBtn.focused,
-#renameInput.focused {
-    outline: 3px solid var(--accent);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);
+#renameInput.focused,
+.dp-fullscreen-back.focused {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 [data-header-idx].header-focused {
     border-color: var(--accent) !important;
@@ -207,8 +208,9 @@ html[data-ui="modern"] #topbarActions {
     gap: 8px;
     margin-left: auto;
 }
-/* Windows draws its own window buttons over the top-right corner */
-html[data-os^="win"][data-ui="modern"] #topbarActions { padding-right: 0; }
+/* Keep the action buttons clear of Electron's native Windows title-bar controls. */
+html[data-os^="win"][data-ui="modern"] #topbarActions { padding-right: 138px; }
+html[data-os^="win"][data-ui="modern"] body.full-screen-mode #topbarActions { padding-right: 0; }
 
 /* macOS: traffic lights sit inside the bar on the left; search stretches; Full Screen + logo on the right */
 html[data-os^="mac"][data-ui="modern"] #topbarCard { flex: 1; width: auto; padding-left: 80px; }
@@ -271,8 +273,8 @@ html[data-ui="modern"] #topbarCard #librarySearch:focus {
 
 /* Full Screen (icon only; renderer.js still changes its text, which is hidden) */
 html[data-ui="modern"] #fullScreenBtn {
-    position: absolute;
-    left: calc(var(--sidebar-width) + 8px);
+    position: relative;
+    left: auto;
     flex: none;
     width: 36px;
     height: 36px;
@@ -305,6 +307,22 @@ html[data-ui="modern"] body.full-screen-mode #fullScreenBtn::before {
 html[data-ui="modern"] #fullScreenBtn:hover { color: var(--accent); background: rgba(255, 255, 255, 0.1); border-color: var(--stroke-strong); }
 html[data-ui="modern"] #fullScreenBtn:active { transform: scale(0.95); }
 html[data-ui="modern"] #fullScreenBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Align the Windows fullscreen glyph with the native title-bar controls. */
+html[data-os^="win"][data-ui="modern"] body:not(.full-screen-mode) #fullScreenBtn {
+    top: -13px;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 0;
+}
+html[data-os^="win"][data-ui="modern"] body:not(.full-screen-mode) #fullScreenBtn::before {
+    width: 14px;
+    height: 14px;
+}
+html[data-os^="win"][data-ui="modern"] body:not(.full-screen-mode) #fullScreenBtn:hover {
+    background: transparent;
+    border-color: transparent;
+}
 
 
 /* ---------- Layout ---------- */
@@ -427,7 +445,7 @@ html[data-ui="modern"] .dp-hero {
     min-height: 210px !important;
     max-height: none !important;
     padding: 1.5rem 1.75rem;
-    background-position: center 25%;
+    background-position: center;
 }
 html[data-ui="modern"] .dp-hero::after {
     background:
@@ -746,7 +764,7 @@ html[data-ui="modern"] .dp-hero {
     max-height: 430px !important;
     padding: 30px 34px 58px;
     background-color: #111116;
-    background-position: center 34%;
+    background-position: center;
 }
 
 html[data-ui="modern"] .dp-hero::after {
@@ -788,7 +806,7 @@ html[data-ui="modern"] .dp-game-genres {
 }
 
 html[data-ui="modern"] #dpLogoContainer {
-    max-width: min(48%, 480px);
+    max-width: none;
 }
 
 html[data-ui="modern"] #dpLogoContainer img {
@@ -800,7 +818,7 @@ html[data-ui="modern"] .dp-action-row {
     position: relative;
     z-index: 5;
     min-height: 68px;
-    margin: -26px 22px 0;
+    margin: 16px 22px 0;
     padding: 12px 14px;
     gap: 14px;
     background: color-mix(in srgb, var(--m-surface) 82%, #fff 5%);
@@ -915,7 +933,7 @@ html[data-ui="modern"][data-theme="liquidGlass"] body.native-glass #detail-panel
     background: rgba(10, 12, 16, 0.16);
 }
 html[data-ui="modern"][data-theme="liquidGlass"] body.native-glass .dp-action-row {
-    margin: -26px 0 0;
+    margin: 16px 0 0;
     background: color-mix(in srgb, var(--m-surface) 92%, var(--accent) 8%);
     border: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.1);

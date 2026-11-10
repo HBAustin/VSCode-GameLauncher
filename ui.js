@@ -209,6 +209,7 @@
     let lhFilter = null;
     let lhLauncherFilter = null;
     let lhSort = null;
+    let lhHeadingFilters = null;
     if (library && library.parentElement) {
         pane = document.createElement('div');
         pane.className = 'library-pane';
@@ -223,6 +224,7 @@
         lhFilter.type = 'button';
         lhFilter.className = 'lh-filter';
         lhFilter.id = 'libraryFilterBtn';
+        lhFilter.dataset.headerIdx = '6';
         lhFilter.addEventListener('click', () => {
             const next = root.dataset.libraryFilter === 'installed' ? 'all' : 'installed';
             root.dataset.libraryFilter = next;
@@ -235,6 +237,7 @@
         lhLauncherFilter = document.createElement('select');
         lhLauncherFilter.className = 'lh-launcher-filter';
         lhLauncherFilter.id = 'libraryLauncherFilter';
+        lhLauncherFilter.dataset.headerIdx = '7';
         lhLauncherFilter.setAttribute('aria-label', 'Filter games by launcher');
         [
             ['all', 'All launchers'],
@@ -274,10 +277,10 @@
         const headingTop = document.createElement('div');
         headingTop.className = 'lh-heading-top';
         headingTop.append(titleGroup, lhSort);
-        const headingFilters = document.createElement('div');
-        headingFilters.className = 'lh-heading-filters';
-        headingFilters.append(lhFilter, lhLauncherFilter);
-        heading.append(headingTop, headingFilters);
+        lhHeadingFilters = document.createElement('div');
+        lhHeadingFilters.className = 'lh-heading-filters';
+        lhHeadingFilters.append(lhFilter, lhLauncherFilter);
+        heading.append(headingTop, lhHeadingFilters);
         library.before(pane);
         pane.append(heading, library); // #library keeps its identity, so renderer.js is unaffected
     }
@@ -358,10 +361,12 @@
 
     function closeMenu() {
         if (!menu) return;
+        const owner = menu.owner;
         menu.abort.abort();
         menu.el.remove();
         if (menu.mark) menu.mark.classList.remove('ctx-target');
         menu = null;
+        if (owner === 'brand') document.dispatchEvent(new Event('hb-controller-menu-closed'));
     }
 
     // items: 'sep' | { action, label, cls?, confirm?, run }
@@ -421,6 +426,7 @@
         const { signal } = abort;
         menu = { el, mark, abort, owner };
         if (mark) mark.classList.add('ctx-target');
+        if (owner === 'brand') document.dispatchEvent(new Event('hb-controller-menu-opened'));
 
         el.addEventListener('click', (e) => {
             const btn = e.target.closest('.ctx-item');
@@ -457,6 +463,10 @@
             }
         }, { capture: true, signal });
     }
+
+    document.addEventListener('hb-close-controller-menu', () => {
+        if (menu && menu.owner === 'brand') closeMenu();
+    });
 
     // Capture phase lets the game menu use a styled popup window that can extend beyond the launcher.
     window.addEventListener('contextmenu', (e) => {
@@ -582,6 +592,7 @@
         return d;
     };
     const topbarCard = makeDiv('topbar-card', 'topbarCard');
+    const fullscreenControls = makeDiv('fullscreen-controls', 'fullscreenControls');
     const topbarActions = makeDiv('topbar-actions', 'topbarActions');
     const footerbar = makeDiv('footerbar', 'footerbar');
 
@@ -593,6 +604,7 @@
         // Insert the card first so it always lands to the left of topbarActions below,
         // regardless of OS branch.
         header.insertBefore(topbarCard, controls);
+        header.insertBefore(fullscreenControls, controls);
 
         if (mac) {
             // Traffic lights are on the left: search stretches, Full Screen and the logo go right
@@ -609,8 +621,31 @@
         if (addBtn) footerbar.replaceChildren(addBtn);
         if (lhSort && sortControl) lhSort.replaceChildren(sortControl);
         if (settingsBtn) settingsBtn.style.display = 'none'; // Settings lives in the logo menu now
-        brandBtn.dataset.headerIdx = '5';                    // keep it reachable with a controller
+        brandBtn.dataset.headerIdx = '0';
+        search.dataset.headerIdx = '1';
+        if (sortControl) sortControl.querySelector('select').dataset.headerIdx = '2';
+        if (lhFilter) lhFilter.dataset.headerIdx = '3';
+        if (lhLauncherFilter) lhLauncherFilter.dataset.headerIdx = '4';
+        if (fullBtn) fullBtn.dataset.headerIdx = '5';
+        if (addBtn) addBtn.dataset.headerIdx = '6';
     }
+
+    function syncFullscreenControls() {
+        if (!fullscreenControls || !lhSort || !lhHeadingFilters || !heading) return;
+        const useTopbar = document.body.classList.contains('full-screen-mode')
+            && !document.body.classList.contains('full-screen-preview');
+        if (useTopbar) {
+            fullscreenControls.replaceChildren(lhSort, lhHeadingFilters);
+        } else {
+            heading.querySelector('.lh-heading-top')?.append(lhSort);
+            heading.append(lhHeadingFilters);
+            fullscreenControls.replaceChildren();
+        }
+    }
+
+    const fullscreenControlsObserver = new MutationObserver(syncFullscreenControls);
+    fullscreenControlsObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    syncFullscreenControls();
 
     function applyLayout() {
         enterModern();

@@ -12,6 +12,7 @@ const library = document.getElementById('library');
 const contentWrapper = document.getElementById('contentWrapper');
 const fullScreenBtn = document.getElementById('fullScreenBtn');
 const sortSelect = document.getElementById('sortSelect');
+const fullscreenSortSelect = document.getElementById('dpFullscreenSort');
 const librarySearch = document.getElementById('librarySearch'); 
 const addBtn = document.getElementById('addBtn');
 
@@ -43,6 +44,14 @@ let dashFocusIndex = 0;
 let lastMoveTime = 0;
 let lastButtonState = new Array(20).fill(false);
 let lastActiveGamepadIndex = null;
+let isWindowFocused = document.hasFocus();
+let blockGamepadUntilNeutral = false;
+let lastControllerScrollAt = 0;
+let controllerLibraryScrollRemainder = 0;
+let fullscreenComboStartedAt = 0;
+let fullscreenComboTriggered = false;
+let controllerMenuReturnZone = 'header';
+let controllerMenuFocusIndex = 0;
 let steamInstallStates = {};
 const libraryFilter = (() => {
     try { return localStorage.getItem('hb-library-filter') === 'installed' ? 'installed' : 'all'; }
@@ -1051,6 +1060,7 @@ const enterFullScreenPreview = () => {
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
     currentZone = 'detail-panel';
     dashFocusIndex = 0;
+    focusIndex = Math.max(0, sortedIds.indexOf(selectedListId));
     applyFocus();
 };
 
@@ -1063,6 +1073,12 @@ const exitFullScreenPreview = () => {
     if (focusIndex < 0) focusIndex = 0;
     applyFocus();
 };
+
+document.getElementById('dpFullscreenBack').addEventListener('click', exitFullScreenPreview);
+fullscreenSortSelect.addEventListener('change', () => {
+    sortSelect.value = fullscreenSortSelect.value;
+    sortSelect.dispatchEvent(new Event('change'));
+});
 
 const updateFullScreenButton = (isFull) => {
     isFullScreenMode = !!isFull;
@@ -1090,7 +1106,10 @@ addBtn.onclick = () => {
     ipcRenderer.send('add-game-requested');
 };
 
-sortSelect.onchange = () => renderLibrary();
+sortSelect.onchange = () => {
+    fullscreenSortSelect.value = sortSelect.value;
+    renderLibrary();
+};
 librarySearch.oninput = () => renderLibrary();
 
 function formatLastPlayed(timestamp) {
@@ -1242,13 +1261,12 @@ function applyHeroLogoSettings(game = selectedListId ? gameData[selectedListId] 
     const logoContainer = document.getElementById('dpLogoContainer');
     if (!logoContainer) return;
 
-    applyLogoPosition(logoContainer, game?.heroLogoPosition || 'bottom-left', game);
-
     const logoImage = logoContainer.querySelector('img');
-    if (logoImage) {
-        logoImage.onload = () => applyLogoImageScale(logoImage, game, logoContainer.parentElement);
-        applyLogoImageScale(logoImage, game, logoContainer.parentElement);
-    }
+    if (!logoImage) return;
+
+    applyLogoPosition(logoImage, game?.heroLogoPosition || 'bottom-left', game);
+    logoImage.onload = () => applyLogoImageScale(logoImage, game, logoContainer.parentElement);
+    applyLogoImageScale(logoImage, game, logoContainer.parentElement);
 }
 
 function getLogoScale(game) {
@@ -1277,6 +1295,7 @@ function applyLogoPosition(element, position, game = {}) {
         ? { x: Number(game.heroLogoX) || 50, y: Number(game.heroLogoY) || 50, transform: 'translate(-50%, -50%)' }
         : positions[position] || positions['bottom-left'];
 
+    element.style.position = 'absolute';
     element.style.left = `${selectedPosition.x}%`;
     element.style.top = `${selectedPosition.y}%`;
     element.style.right = 'auto';
@@ -1290,6 +1309,11 @@ function updateLogoLivePreview(game, forceReload = false) {
 
     const backgroundPath = game?.background || game?.cover;
     const logoPath = game?.logo || game?.icon;
+    const hero = document.getElementById('dpHero');
+    const heroBounds = hero?.getBoundingClientRect();
+    preview.style.aspectRatio = heroBounds?.width && heroBounds.height
+        ? `${heroBounds.width} / ${heroBounds.height}`
+        : '16 / 9';
     if (forceReload) {
         preview.dataset.backgroundPath = '';
         const existingLogo = preview.querySelector('img');
@@ -1300,17 +1324,6 @@ function updateLogoLivePreview(game, forceReload = false) {
         preview.style.backgroundImage = backgroundPath
             ? `url('${artworkUrl(backgroundPath, forceReload)}')`
             : 'none';
-        preview.style.aspectRatio = '16 / 9';
-
-        if (backgroundPath) {
-            const backgroundImage = new Image();
-            backgroundImage.onload = () => {
-                if (preview.dataset.backgroundPath === backgroundPath) {
-                    preview.style.aspectRatio = `${backgroundImage.naturalWidth} / ${backgroundImage.naturalHeight}`;
-                }
-            };
-            backgroundImage.src = artworkUrl(backgroundPath, forceReload);
-        }
     }
 
     let logoImage = preview.querySelector('img');
@@ -1604,7 +1617,9 @@ document.querySelectorAll('.dp-screenshot-grid, .related-games-grid').forEach((g
         const maxScrollLeft = gallery.scrollWidth - gallery.clientWidth;
         if (maxScrollLeft <= 0) return;
 
-        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        const isHorizontalInput = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+        if (!isHorizontalInput) return;
+        const delta = event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX;
         if (!delta) return;
         if ((delta < 0 && gallery.scrollLeft <= 0) || (delta > 0 && gallery.scrollLeft >= maxScrollLeft)) return;
 
@@ -1634,7 +1649,9 @@ const selectListItem = (id) => {
     loadSteamMedia(id);
     
     const heroBg = d.background || d.cover;
-    document.getElementById('dpHero').style.backgroundImage = heroBg ? `url('${artworkUrl(heroBg, true)}')` : 'none';
+    const hero = document.getElementById('dpHero');
+    hero.style.backgroundImage = heroBg ? `url('${artworkUrl(heroBg, true)}')` : 'none';
+    document.getElementById('dpFullscreenTitle').textContent = d.name;
     const requestId = ++heroImageRequestId;
     currentHeroImage = null;
     if (heroBg) {
@@ -1652,7 +1669,6 @@ const selectListItem = (id) => {
         heroImage.src = artworkUrl(heroBg, true);
     } else {
         resetPlayButtonColor();
-        const hero = document.getElementById('dpHero');
         hero.style.height = '';
         hero.style.minHeight = '';
     }
@@ -1674,7 +1690,9 @@ const selectListItem = (id) => {
     try {
         const dpLogoContainer = document.getElementById('dpLogoContainer');
         const logoPath = d.logo || d.icon;
-        if (currentSettings?.customLayout?.useLogoOnHero && logoPath) {
+        const showLogo = !!(currentSettings?.customLayout?.useLogoOnHero && logoPath);
+        hero.classList.toggle('has-logo', showLogo);
+        if (showLogo) {
             const imgSrc = artworkUrl(logoPath, true);
             if (dpLogoContainer) dpLogoContainer.innerHTML = `<img src="${imgSrc}" style="width:auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" alt="logo"/>`;
             applyHeroLogoSettings(d);
@@ -1987,11 +2005,25 @@ function setControllerActive(state) {
     if (isControllerMode === state) return;
     isControllerMode = state;
     document.body.classList.toggle('controller-mode', state);
-    if (state) applyFocus();
+    if (state) {
+        applyFocus();
+    } else {
+        controllerLibraryScrollRemainder = 0;
+        fullscreenComboStartedAt = 0;
+        fullscreenComboTriggered = false;
+        document.querySelectorAll('.focused, .controller-focused, .header-focused').forEach((element) => {
+            element.classList.remove('focused', 'controller-focused', 'header-focused');
+        });
+    }
 }
 
 window.addEventListener('mousemove', () => setControllerActive(false));
 window.addEventListener('keydown', (e) => {
+    if (e.key === 'F11' && !e.repeat) {
+        e.preventDefault();
+        ipcRenderer.send('set-fullscreen', !isFullScreenMode);
+        return;
+    }
     if (document.activeElement !== librarySearch && document.activeElement !== document.getElementById('renameInput') && document.activeElement !== document.getElementById('steamGridApiKey')) {
         setControllerActive(false);
     }
@@ -2013,6 +2045,9 @@ function updateGlyphs(gamepadId) {
     document.getElementById('aLabel').innerText = "Select / Play";
     document.getElementById('xLabel').innerText = "Options";
     document.getElementById('bLabel').innerText = "Back";
+    document.getElementById('fullscreenComboLabel').innerText = isPS
+        ? "Hold Share + Options"
+        : "Hold View + Menu";
     
     const footerGlyphs = document.querySelectorAll('.footer .glyph');
     if (footerGlyphs.length >= 3) {
@@ -2022,8 +2057,16 @@ function updateGlyphs(gamepadId) {
     }
 }
 
+function getControllerHeaderElements() {
+    return Array.from(document.querySelectorAll('[data-header-idx]'))
+        .filter((element) => element.getClientRects().length > 0
+            && window.getComputedStyle(element).visibility !== 'hidden')
+        .sort((a, b) => Number(a.dataset.headerIdx) - Number(b.dataset.headerIdx));
+}
+
 // Controller order on the game page: Play, then the icon buttons as they appear on screen (left to right)
 const detailButtons = () => [
+    ...(isFullScreenPreviewActive ? [document.getElementById('dpFullscreenBack'), fullscreenSortSelect] : []),
     document.getElementById('dpPlayBtn'),
     ...[...document.querySelectorAll('.dp-management-actions .dash-btn')]
         .filter((b) => !b.hidden && b.offsetParent !== null)
@@ -2036,13 +2079,20 @@ const detailButtons = () => [
 function applyFocus() {
     if (!isControllerMode) return;
 
-    document.querySelectorAll('.game-card, .menu-btn, #renameInput, .dash-btn, #dpPlayBtn').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.game-card, .menu-btn, .ctx-item, #renameInput, .dash-btn, #dpPlayBtn, #dpFullscreenSort, #dpFullscreenBack').forEach(el => el.classList.remove('focused'));
     document.querySelectorAll('.artwork-row').forEach(el => el.classList.remove('controller-focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
     if (currentZone === 'contextModal') {
         const ctxBtns = document.querySelectorAll('#contextOptionsList .menu-btn');
         if (ctxBtns[modalFocusIndex]) ctxBtns[modalFocusIndex].classList.add('focused');
+    }
+    else if (currentZone === 'brandMenu') {
+        const menuItems = document.querySelectorAll('.ctx-menu .ctx-item');
+        if (menuItems.length) {
+            controllerMenuFocusIndex = Math.max(0, Math.min(controllerMenuFocusIndex, menuItems.length - 1));
+            menuItems[controllerMenuFocusIndex].classList.add('focused');
+        }
     }
     else if (currentZone === 'customizeModal') {
         const artworkRows = document.querySelectorAll('#customizeOptionsList .artwork-row');
@@ -2072,8 +2122,8 @@ function applyFocus() {
         applySettingsFocus();
     }
     else if (currentZone === 'header') {
-        const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
-        const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex) || headerElements[0];
+        const headerElements = getControllerHeaderElements();
+        const activeEl = headerElements.find(el => Number(el.dataset.headerIdx) === headerFocusIndex) || headerElements[0];
         if (activeEl) {
             activeEl.classList.add('header-focused');
             if (activeEl.id === 'librarySearch') activeEl.focus(); 
@@ -2083,11 +2133,11 @@ function applyFocus() {
     else if (currentZone === 'library') {
         librarySearch.blur();
         if (sortedIds.length > 0) {
-            if (focusIndex >= sortedIds.length) focusIndex = sortedIds.length - 1;
+            focusIndex = Math.max(0, Math.min(focusIndex, sortedIds.length - 1));
             const activeCard = document.getElementById(sortedIds[focusIndex]);
             if (activeCard) {
                 activeCard.classList.add('focused');
-                activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
                 if (viewMode === 'list' && selectedListId !== sortedIds[focusIndex]) {
                     selectListItem(sortedIds[focusIndex]);
                 }
@@ -2096,13 +2146,117 @@ function applyFocus() {
     }
     else if (currentZone === 'detail-panel') {
         const btns = detailButtons();
-        dashFocusIndex = Math.max(0, Math.min(dashFocusIndex, btns.length - 1));
-        btns[dashFocusIndex].classList.add('focused');
+        if (btns.length) {
+            dashFocusIndex = Math.max(0, Math.min(dashFocusIndex, btns.length - 1));
+            btns[dashFocusIndex].classList.add('focused');
+        }
+    }
+}
+
+function getControllerScrollTarget(axis, direction) {
+    let page;
+    if (currentZone === 'library') {
+        page = library;
+    } else if (currentZone === 'detail-panel') {
+        page = document.getElementById('dp-content-state');
+    } else if (currentZone === 'settingsModal') {
+        page = document.querySelector('#settingsModal .settings-panels');
+    } else if (currentZone === 'customizeModal') {
+        page = document.querySelector('#customizeModal .artwork-modal-content');
+    } else if (currentZone === 'contextModal') {
+        page = document.querySelector('#contextModal .modal-content');
+    } else if (currentZone === 'renameModal') {
+        page = document.querySelector('#renameModal .modal-content');
+    } else {
+        page = null;
+    }
+
+    if (!page) return null;
+
+    const overflowProperty = axis === 'horizontal' ? 'overflowX' : 'overflowY';
+    const sizeProperty = axis === 'horizontal' ? 'scrollWidth' : 'scrollHeight';
+    const clientSizeProperty = axis === 'horizontal' ? 'clientWidth' : 'clientHeight';
+    const positionProperty = axis === 'horizontal' ? 'scrollLeft' : 'scrollTop';
+    const candidates = [page, ...page.querySelectorAll('*')];
+    return candidates.find((element) => {
+        const style = window.getComputedStyle(element);
+        const canScroll = element[sizeProperty] > element[clientSizeProperty] + 1
+            && ['auto', 'scroll', 'overlay'].includes(style[overflowProperty]);
+        if (!canScroll) return false;
+        const position = element[positionProperty];
+        const maxPosition = element[sizeProperty] - element[clientSizeProperty];
+        return direction < 0 ? position > 0 : position < maxPosition - 1;
+    }) || null;
+}
+
+function scrollWithController(gamepad, now) {
+    const rightStickAxis = gamepad.mapping === 'standard' || gamepad.axes.length < 5 ? 2 : 3;
+    const horizontalAxis = gamepad.axes[rightStickAxis] || 0;
+    const verticalAxis = gamepad.axes[rightStickAxis + 1] || 0;
+    const elapsed = lastControllerScrollAt ? Math.min(now - lastControllerScrollAt, 50) : 16;
+    lastControllerScrollAt = now;
+    const scrollAmount = (axis) => Math.sign(axis) * Math.max(0, Math.abs(axis) - 0.2) / 0.8 * elapsed * 0.8;
+
+    if (Math.abs(horizontalAxis) > 0.2) {
+        const direction = Math.sign(horizontalAxis);
+        const target = getControllerScrollTarget('horizontal', direction);
+        if (target) target.scrollBy({ left: scrollAmount(horizontalAxis), behavior: 'auto' });
+    }
+    if (Math.abs(verticalAxis) > 0.2) {
+        const target = getControllerScrollTarget('vertical', Math.sign(verticalAxis));
+        if (target) {
+            const previousScrollTop = target.scrollTop;
+            target.scrollBy({ top: scrollAmount(verticalAxis), behavior: 'auto' });
+            const actualScroll = target.scrollTop - previousScrollTop;
+            if (actualScroll && isFullScreenMode && currentZone === 'library' && viewMode === 'grid' && target === library) {
+                const columns = Math.max(1, window.getComputedStyle(library).gridTemplateColumns.split(' ').length);
+                const currentCard = document.getElementById(sortedIds[focusIndex]);
+                const nextRowCard = document.getElementById(sortedIds[focusIndex + columns]);
+                const rowPitch = currentCard && nextRowCard
+                    ? nextRowCard.getBoundingClientRect().top - currentCard.getBoundingClientRect().top
+                    : currentCard?.getBoundingClientRect().height || 0;
+                if (rowPitch > 0) {
+                    controllerLibraryScrollRemainder += actualScroll;
+                    const rowsScrolled = Math.trunc(controllerLibraryScrollRemainder / rowPitch);
+                    if (rowsScrolled) {
+                        const nextFocusIndex = Math.max(0, Math.min(
+                            focusIndex + rowsScrolled * columns,
+                            sortedIds.length - 1
+                        ));
+                        controllerLibraryScrollRemainder -= (nextFocusIndex - focusIndex) / columns * rowPitch;
+                        if (nextFocusIndex !== focusIndex) {
+                            focusIndex = nextFocusIndex;
+                            applyFocus();
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 function handleGamepadLoop() {
-    if (!document.hasFocus()) { requestAnimationFrame(handleGamepadLoop); return; }
+    if (!isWindowFocused || !document.hasFocus() || document.visibilityState === 'hidden') {
+        isWindowFocused = false;
+        blockGamepadUntilNeutral = true;
+        lastButtonState.fill(false);
+        fullscreenComboStartedAt = 0;
+        fullscreenComboTriggered = false;
+        setControllerActive(false);
+        requestAnimationFrame(handleGamepadLoop);
+        return;
+    }
+
+    if (blockGamepadUntilNeutral) {
+        const gamepads = navigator.getGamepads();
+        const hasInput = Array.from(gamepads).some((gp) => gp?.connected && (
+            gp.buttons.some((button) => button.pressed) || gp.axes.some((axis) => Math.abs(axis) > 0.5)
+        ));
+        if (hasInput) { requestAnimationFrame(handleGamepadLoop); return; }
+        lastButtonState.fill(false);
+        blockGamepadUntilNeutral = false;
+    }
+
     if (isFullScreenPreviewActive && currentZone !== 'detail-panel') {
         currentZone = 'detail-panel';
     }
@@ -2127,6 +2281,18 @@ function handleGamepadLoop() {
 
     if (activeGp && isControllerMode) {
         const now = Date.now();
+        const fullscreenComboPressed = !!activeGp.buttons[8]?.pressed && !!activeGp.buttons[9]?.pressed;
+        if (fullscreenComboPressed) {
+            if (!fullscreenComboStartedAt) fullscreenComboStartedAt = now;
+            else if (!fullscreenComboTriggered && now - fullscreenComboStartedAt >= 600) {
+                fullscreenComboTriggered = true;
+                ipcRenderer.send('set-fullscreen', !isFullScreenMode);
+            }
+        } else {
+            fullscreenComboStartedAt = 0;
+            fullscreenComboTriggered = false;
+        }
+        scrollWithController(activeGp, now);
         if (now - lastMoveTime > 180) {
             let moved = false;
             const up = activeGp.axes[1] < -0.5 || activeGp.buttons[12].pressed;
@@ -2138,6 +2304,11 @@ function handleGamepadLoop() {
                 const btns = document.querySelectorAll('#contextOptionsList .menu-btn');
                 if (down && modalFocusIndex + 1 < btns.length) { modalFocusIndex++; moved = true; }
                 if (up && modalFocusIndex > 0) { modalFocusIndex--; moved = true; }
+            }
+            else if (currentZone === 'brandMenu') {
+                const menuItems = document.querySelectorAll('.ctx-menu .ctx-item');
+                if (down && controllerMenuFocusIndex + 1 < menuItems.length) { controllerMenuFocusIndex++; moved = true; }
+                if (up && controllerMenuFocusIndex > 0) { controllerMenuFocusIndex--; moved = true; }
             }
             else if (currentZone === 'settingsModal') {
                 const horizontal = (right ? 1 : 0) - (left ? 1 : 0);
@@ -2166,16 +2337,16 @@ function handleGamepadLoop() {
                 if (left && renameFocusIndex === 2) { renameFocusIndex = 1; moved = true; }
             }
             else if (currentZone === 'header') {
-                const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
-                let currentVisIdx = headerElements.findIndex(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
+                const headerElements = getControllerHeaderElements();
+                let currentVisIdx = headerElements.findIndex(el => Number(el.dataset.headerIdx) === headerFocusIndex);
                 if (currentVisIdx === -1) currentVisIdx = 0;
 
                 if (right && currentVisIdx + 1 < headerElements.length) { 
-                    headerFocusIndex = parseInt(headerElements[currentVisIdx + 1].dataset.headerIdx); 
+                    headerFocusIndex = Number(headerElements[currentVisIdx + 1].dataset.headerIdx);
                     moved = true; 
                 }
                 if (left && currentVisIdx > 0) { 
-                    headerFocusIndex = parseInt(headerElements[currentVisIdx - 1].dataset.headerIdx); 
+                    headerFocusIndex = Number(headerElements[currentVisIdx - 1].dataset.headerIdx);
                     moved = true; 
                 }
                 if (down && sortedIds.length > 0) { currentZone = 'library'; moved = true; }
@@ -2191,8 +2362,8 @@ function handleGamepadLoop() {
                 if (up) { 
                     if (focusIndex < cols) { 
                         currentZone = 'header'; 
-                        const vis = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
-                        headerFocusIndex = vis.length > 0 ? parseInt(vis[0].dataset.headerIdx) : 0;
+                        const vis = getControllerHeaderElements();
+                        headerFocusIndex = vis.length > 0 ? Number(vis[0].dataset.headerIdx) : 0;
                         moved = true; 
                     } else { focusIndex -= cols; moved = true; } 
                 }
@@ -2214,7 +2385,11 @@ function handleGamepadLoop() {
                 if (up && dashFocusIndex > 0) { dashFocusIndex = 0; moved = true; }
             }
 
-            if (moved) { applyFocus(); lastMoveTime = now; }
+            if (moved) {
+                controllerLibraryScrollRemainder = 0;
+                applyFocus();
+                lastMoveTime = now;
+            }
         }
 
         const pressedA = activeGp.buttons[0].pressed && !lastButtonState[0]; 
@@ -2228,6 +2403,9 @@ function handleGamepadLoop() {
                     if (focusedElement.matches('input[type="text"], input[type="password"]')) focusedElement.focus();
                     else focusedElement.click();
                 }
+            }
+            else if (currentZone === 'brandMenu') {
+                document.querySelectorAll('.ctx-menu .ctx-item')[controllerMenuFocusIndex]?.click();
             }
             else if (currentZone === 'contextModal') { document.querySelectorAll('#contextOptionsList .menu-btn')[modalFocusIndex]?.click(); }
             else if (currentZone === 'customizeModal') {
@@ -2246,13 +2424,14 @@ function handleGamepadLoop() {
                 else if (renameFocusIndex === 2) closeModal();
             }
             else if (currentZone === 'header') { 
-                const headerElements = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
-                const activeEl = headerElements.find(el => parseInt(el.dataset.headerIdx) === headerFocusIndex);
+                const activeEl = getControllerHeaderElements().find(el => Number(el.dataset.headerIdx) === headerFocusIndex);
                 if (activeEl) {
-                    if (activeEl.id === 'sortSelect') {
-                        sortSelect.selectedIndex = (sortSelect.selectedIndex + 1) % sortSelect.options.length;
-                        sortSelect.dispatchEvent(new Event('change'));
-                    } else { activeEl.click(); }
+                    if (activeEl.matches('select')) {
+                        activeEl.selectedIndex = (activeEl.selectedIndex + 1) % activeEl.options.length;
+                        activeEl.dispatchEvent(new Event('change'));
+                    } else {
+                        activeEl.click();
+                    }
                 }
             } 
             else if (currentZone === 'library' && sortedIds[focusIndex]) {
@@ -2262,13 +2441,20 @@ function handleGamepadLoop() {
             }
             else if (currentZone === 'detail-panel') {
                 const pressed = detailButtons()[dashFocusIndex];
-                if (pressed) pressed.click();
+                if (pressed === fullscreenSortSelect) {
+                    fullscreenSortSelect.selectedIndex = (fullscreenSortSelect.selectedIndex + 1) % fullscreenSortSelect.options.length;
+                    fullscreenSortSelect.dispatchEvent(new Event('change'));
+                } else if (pressed) {
+                    pressed.click();
+                }
             }
         }
 
         if (pressedB) {
             if (currentZone === 'settingsModal') {
                 closeModal();
+            } else if (currentZone === 'brandMenu') {
+                document.dispatchEvent(new Event('hb-close-controller-menu'));
             } else if (currentZone === 'customizeModal' && customizeActionMode) {
                 customizeActionMode = false;
                 applyFocus();
@@ -2276,8 +2462,11 @@ function handleGamepadLoop() {
                 closeModal();
             } else if (currentZone === 'library') {
                 currentZone = 'header'; 
-                const vis = Array.from(document.querySelectorAll('[data-header-idx]')).filter(el => el.style.display !== 'none');
-                headerFocusIndex = vis.length > 0 ? parseInt(vis[0].dataset.headerIdx) : 0;
+                const vis = getControllerHeaderElements();
+                headerFocusIndex = vis.length > 0 ? Number(vis[0].dataset.headerIdx) : 0;
+                applyFocus();
+            } else if (currentZone === 'header') {
+                currentZone = 'library';
                 applyFocus();
             } else if (currentZone === 'detail-panel') {
                 if (isFullScreenPreviewActive) {
@@ -2294,9 +2483,37 @@ function handleGamepadLoop() {
         }
 
         for (let i = 0; i < activeGp.buttons.length; i++) { lastButtonState[i] = activeGp.buttons[i].pressed; }
+    } else {
+        fullscreenComboStartedAt = 0;
+        fullscreenComboTriggered = false;
     }
     requestAnimationFrame(handleGamepadLoop);
 }
+
+document.addEventListener('hb-controller-menu-opened', () => {
+    if (!isControllerMode) return;
+    controllerMenuReturnZone = currentZone;
+    controllerMenuFocusIndex = 0;
+    currentZone = 'brandMenu';
+    applyFocus();
+});
+document.addEventListener('hb-controller-menu-closed', () => {
+    if (currentZone !== 'brandMenu') return;
+    currentZone = controllerMenuReturnZone;
+    applyFocus();
+});
+
+window.addEventListener('blur', () => {
+    isWindowFocused = false;
+    blockGamepadUntilNeutral = true;
+    lastButtonState.fill(false);
+    setControllerActive(false);
+});
+window.addEventListener('focus', () => {
+    isWindowFocused = true;
+    blockGamepadUntilNeutral = true;
+    lastButtonState.fill(false);
+});
 
 ipcRenderer.on('cover-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].cover = path; saveToDisk(); renderLibrary(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
 ipcRenderer.on('bg-updated', (e, { id, path }) => { if (gameData[id]) { gameData[id].background = path; saveToDisk(); updateCustomizePreviews(gameData[id], true); if(selectedListId === id) selectListItem(id); } });
