@@ -1,6 +1,6 @@
 {
   "name": "hb-launcher",
-  "version": "2.1.0-rc.1",
+  "version": "3.0.0-beta-1",
   "description": "Custom Game Launcher",
   "author": "HB",
   "main": "main.js",
