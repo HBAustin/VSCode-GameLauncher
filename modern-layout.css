@@ -583,11 +583,6 @@ html[data-ui="modern"] body.full-screen-preview .dp-action-row {
     margin: -96px clamp(24px, 5vw, 80px) 0;
     padding: 14px 18px;
     gap: 20px;
-    background: rgba(16, 17, 22, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 18px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(24px) saturate(140%);
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-play-btn {
