@@ -875,6 +875,38 @@
         .glyph.a:not(.ps-cross)::after { content: "A"; font-weight: 800; }
         .glyph.b:not(.ps-circle)::after { content: "B"; font-weight: 800; }
         .glyph.x:not(.ps-square)::after { content: "X"; font-weight: 800; }
+        .glyph.ps-cross::after {
+            content: "";
+            width: 42%;
+            height: 42%;
+            background:
+                linear-gradient(45deg, transparent 42%, currentColor 43% 56%, transparent 57%),
+                linear-gradient(-45deg, transparent 42%, currentColor 43% 56%, transparent 57%);
+        }
+        .glyph.ps-square::after {
+            content: "";
+            width: 38%;
+            height: 38%;
+            border: 1.5px solid currentColor;
+            box-sizing: border-box;
+        }
+        .glyph.ps-circle::after {
+            content: "";
+            width: 38%;
+            height: 38%;
+            border: 1.5px solid currentColor;
+            border-radius: 50%;
+            box-sizing: border-box;
+        }
+        .glyph.ps-cross::after,
+        .glyph.ps-square::after,
+        .glyph.ps-circle::after {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
         .glyph.scroll-glyph {
             flex: none;
             border-radius: 50%;
