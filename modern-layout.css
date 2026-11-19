@@ -458,18 +458,18 @@ html[data-ui="modern"] body.full-screen-preview .dp-profile {
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-hero {
-    height: clamp(420px, 80vh, 920px) !important;
-    min-height: min(560px, 70vh) !important;
+    height: clamp(480px, 72vh, 860px) !important;
+    min-height: min(560px, 68vh) !important;
     max-height: none !important;
-    background-position: center;
+    background-position: center 38%;
     background-size: cover;
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-hero::after {
     background:
-        linear-gradient(180deg, rgba(5, 6, 9, 0.28), transparent 30%),
-        linear-gradient(0deg, #090a0d 0%, rgba(9, 10, 13, 0.76) 12%, transparent 52%),
-        linear-gradient(90deg, rgba(5, 6, 9, 0.34), transparent 62%);
+        linear-gradient(180deg, rgba(5, 7, 11, 0.64), transparent 23%),
+        linear-gradient(0deg, #090a0d 0%, rgba(9, 10, 13, 0.82) 11%, transparent 58%),
+        linear-gradient(90deg, rgba(5, 7, 11, 0.72), rgba(5, 7, 11, 0.18) 57%, transparent 82%);
 }
 
 html[data-ui="modern"] .dp-fullscreen-toolbar {
@@ -479,10 +479,12 @@ html[data-ui="modern"] .dp-fullscreen-toolbar {
 html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-toolbar {
     position: absolute;
     z-index: 6;
-    top: clamp(22px, 4vh, 44px);
-    left: clamp(24px, 4vw, 64px);
+    top: clamp(22px, 3.8vh, 42px);
+    right: clamp(24px, 4.5vw, 76px);
+    left: clamp(24px, 4.5vw, 76px);
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
 }
 
@@ -490,17 +492,19 @@ html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-back {
     display: inline-flex;
     align-items: center;
     gap: 9px;
-    min-height: 42px;
-    padding: 0 16px;
+    min-height: 44px;
+    padding: 0 18px;
     color: #fff;
     font: inherit;
-    font-size: 0.82rem;
-    font-weight: 700;
-    background: rgba(12, 13, 17, 0.68);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 750;
+    letter-spacing: 0.035em;
+    background: rgba(10, 12, 17, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 13px;
     cursor: pointer;
-    backdrop-filter: blur(18px);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
@@ -508,17 +512,18 @@ html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-sort {
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 42px;
-    padding: 0 12px;
+    min-height: 44px;
+    padding: 0 14px;
     color: rgba(255, 255, 255, 0.72);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 750;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    background: rgba(12, 13, 17, 0.68);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    backdrop-filter: blur(18px);
+    background: rgba(10, 12, 17, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 13px;
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-sort select {
@@ -541,8 +546,8 @@ html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-sort select.focus
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-back:hover {
-    background: color-mix(in srgb, var(--accent) 24%, rgba(12, 13, 17, 0.8));
-    border-color: color-mix(in srgb, var(--accent) 65%, white);
+    background: color-mix(in srgb, var(--accent) 22%, rgba(10, 12, 17, 0.82));
+    border-color: color-mix(in srgb, var(--accent) 60%, white);
     transform: translateX(-2px);
 }
 
@@ -558,74 +563,180 @@ html[data-ui="modern"] .dp-fullscreen-title {
 html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-title {
     position: absolute;
     z-index: 3;
-    left: clamp(28px, 7vw, 112px);
-    bottom: clamp(128px, 20vh, 210px);
+    left: clamp(28px, 8vw, 132px);
+    bottom: clamp(142px, 19vh, 220px);
     display: block;
-    max-width: min(78vw, 1100px);
+    max-width: min(72vw, 1180px);
     color: #fff;
-    font-size: clamp(2.6rem, 7vw, 6.8rem);
+    font-size: clamp(3.2rem, 7.8vw, 8rem);
     font-weight: 850;
-    line-height: 0.98;
-    letter-spacing: -0.055em;
+    line-height: 0.94;
+    letter-spacing: -0.065em;
     text-wrap: balance;
-    text-shadow: 0 8px 36px rgba(0, 0, 0, 0.68);
+    text-shadow: 0 8px 42px rgba(0, 0, 0, 0.76);
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-fullscreen-title::before {
+    content: "GAME SPOTLIGHT";
+    display: block;
+    margin-bottom: 16px;
+    color: color-mix(in srgb, var(--accent) 88%, white);
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.22em;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-hero.has-logo .dp-fullscreen-title {
     display: none;
 }
 
+html[data-ui="modern"] body.full-screen-preview .dp-hero.has-logo + .dp-action-row {
+    margin-top: -78px;
+}
+
 html[data-ui="modern"] body.full-screen-preview .dp-action-row {
     position: relative;
     z-index: 5;
     width: auto;
-    min-height: 78px;
-    margin: -96px clamp(24px, 5vw, 80px) 0;
-    padding: 14px 18px;
-    gap: 20px;
+    min-height: 92px;
+    margin: -108px clamp(28px, 6vw, 100px) 0;
+    padding: 17px 20px;
+    gap: 24px;
+    color: #f7f8fb;
+    background: rgba(16, 18, 24, 0.84);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 20px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(28px) saturate(145%);
+    backdrop-filter: blur(28px) saturate(145%);
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-play-btn {
-    min-width: 164px;
-    min-height: 48px;
-    border-radius: 12px;
+    min-width: 176px;
+    min-height: 54px;
+    border-radius: 14px;
+    font-size: 0.86rem;
+    letter-spacing: 0.12em;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-last-played {
+    padding-left: 4px;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-last-played-label {
+    color: rgba(239, 242, 248, 0.55);
+    font-size: 0.58rem;
+    letter-spacing: 0.17em;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-last-played-value {
+    color: #f7f8fb;
     font-size: 0.9rem;
+    font-weight: 650;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-management-actions .dash-btn {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    color: rgba(247, 248, 251, 0.86);
+    font-size: 0;
+    background: rgba(255, 255, 255, 0.065);
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-management-actions .dash-btn::before {
+    width: 16px;
+    height: 16px;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-management-actions .dash-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-screenshots,
 html[data-ui="modern"] body.full-screen-preview .dp-related {
-    padding: 42px clamp(24px, 5vw, 80px) 32px;
+    width: calc(100% - clamp(56px, 12vw, 200px));
+    max-width: 1540px;
+    margin-right: auto;
+    margin-left: auto;
+    padding: 42px 0 30px;
     background: #090a0d;
+}
+
+html[data-ui="modern"] body.full-screen-preview .dp-profile {
+    width: calc(100% - clamp(56px, 12vw, 200px));
+    max-width: 1540px;
+    margin-right: auto;
+    margin-left: auto;
+    padding: 16px 0 0;
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-section-title h2 {
     color: #fff;
-    font-size: clamp(1.1rem, 1.6vw, 1.6rem);
-    letter-spacing: -0.03em;
+    font-size: clamp(1.25rem, 1.8vw, 1.8rem);
+    font-weight: 760;
+    letter-spacing: -0.04em;
     text-transform: none;
 }
 
 html[data-ui="modern"] body.full-screen-preview .dp-screenshot {
-    flex-basis: clamp(280px, 32vw, 520px);
+    flex-basis: clamp(300px, 35vw, 560px);
+    border-color: rgba(255, 255, 255, 0.13);
+    border-radius: 15px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.3);
 }
-
-@media (max-width: 700px) {
-    html[data-ui="modern"] body.full-screen-preview .dp-action-row {
-        flex-wrap: wrap;
-        margin-top: -72px;
-        padding: 12px;
-        gap: 12px;
-    }
-
-    html[data-ui="modern"] body.full-screen-preview .dp-management-actions {
-        width: 100%;
-        margin-left: 0;
-    }
-}
-
 
 /* ==========================================================================
-   7. FULLSCREEN LIBRARY REDESIGN
+   7. LIST VIEW GAME PREVIEW
+   ========================================================================== */
+html[data-ui="modern"] body:not(.full-screen-preview) .content-wrapper.list-mode .dp-hero::after {
+    background:
+        linear-gradient(to top, var(--m-surface) 0%, color-mix(in srgb, var(--m-surface) 45%, transparent) 28%, transparent 74%),
+        linear-gradient(90deg, rgba(7, 8, 12, 0.54), rgba(7, 8, 12, 0.12) 68%, transparent);
+}
+
+html[data-ui="modern"] body:not(.full-screen-preview) .content-wrapper.list-mode .dp-fullscreen-title {
+    position: absolute;
+    z-index: 3;
+    bottom: clamp(24px, 4vh, 42px);
+    left: clamp(24px, 3vw, 44px);
+    display: block;
+    max-width: min(86%, 900px);
+    color: #fff;
+    font-size: clamp(1.8rem, 4vw, 3.5rem);
+    font-weight: 850;
+    line-height: 0.98;
+    letter-spacing: -0.055em;
+    text-wrap: balance;
+    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.72);
+}
+
+html[data-ui="modern"] body:not(.full-screen-preview) .content-wrapper.list-mode .dp-fullscreen-title::before {
+    content: "IN YOUR LIBRARY";
+    display: block;
+    margin-bottom: 12px;
+    color: color-mix(in srgb, var(--accent) 88%, white);
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.19em;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+}
+
+html[data-ui="modern"] body:not(.full-screen-preview) .content-wrapper.list-mode .dp-hero.has-logo .dp-fullscreen-title {
+    display: none;
+}
+
+/* ==========================================================================
+   8. FULLSCREEN LIBRARY REDESIGN
    A poster wall with a compact, always-visible control row. The library grid
    owns scrolling; the surrounding window stays fixed.
    ========================================================================== */
