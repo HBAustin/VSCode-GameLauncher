@@ -52,6 +52,8 @@ let fullscreenComboStartedAt = 0;
 let fullscreenComboTriggered = false;
 let controllerMenuReturnZone = 'header';
 let controllerMenuFocusIndex = 0;
+let launchOptionsReturnZone = 'library';
+let launchOptionsFocusIndex = 0;
 let steamInstallStates = {};
 const libraryFilter = (() => {
     try { return localStorage.getItem('hb-library-filter') === 'installed' ? 'installed' : 'all'; }
@@ -539,7 +541,7 @@ let settingsFocusedElement = null;
 
 function getSettingsFocusableElements() {
     return Array.from(document.querySelectorAll(
-        '#settingsModal .settings-tab, #settingsModal .settings-mode-option, #themePresets button, #settingsModal summary, #settingsModal input:not([disabled]), #settingsModal .settings-actions button'
+        '#settingsModal button:not([disabled]), #settingsModal a[href], #settingsModal summary, #settingsModal input:not([disabled])'
     )).filter((element) => element.getClientRects().length > 0 && !element.closest('[hidden]'));
 }
 
@@ -549,7 +551,8 @@ function applySettingsFocus() {
     settingsFocusIndex = Math.max(0, Math.min(settingsFocusIndex, elements.length - 1));
     document.querySelectorAll('#settingsModal .settings-focused').forEach((element) => element.classList.remove('settings-focused'));
     settingsFocusedElement = elements[settingsFocusIndex];
-    settingsFocusedElement.classList.add('settings-focused');
+    const focusTarget = settingsFocusedElement.closest('.settings-toggle, .settings-color-field') || settingsFocusedElement;
+    focusTarget.classList.add('settings-focused');
     settingsFocusedElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 }
 
@@ -1059,7 +1062,7 @@ const enterFullScreenPreview = () => {
     document.body.classList.add('full-screen-preview');
     contentWrapper.className = `content-wrapper ${viewMode}-mode`;
     currentZone = 'detail-panel';
-    dashFocusIndex = 0;
+    dashFocusIndex = Math.max(0, detailButtons().indexOf(document.getElementById('dpPlayBtn')));
     focusIndex = Math.max(0, sortedIds.indexOf(selectedListId));
     applyFocus();
 };
@@ -2047,7 +2050,7 @@ function updateGlyphs(gamepadId) {
     document.getElementById('bLabel').innerText = "Back";
     document.getElementById('fullscreenComboLabel').innerText = isPS
         ? "Hold Share + Options"
-        : "Hold View + Menu";
+        : "Fullscreen";
     
     const footerGlyphs = document.querySelectorAll('.footer .glyph');
     if (footerGlyphs.length >= 3) {
@@ -2079,7 +2082,7 @@ const detailButtons = () => [
 function applyFocus() {
     if (!isControllerMode) return;
 
-    document.querySelectorAll('.game-card, .menu-btn, .ctx-item, #renameInput, .dash-btn, #dpPlayBtn, #dpFullscreenSort, #dpFullscreenBack').forEach(el => el.classList.remove('focused'));
+    document.querySelectorAll('.game-card, .menu-btn, .ctx-item, #renameInput, .dash-btn, #dpPlayBtn, #dpFullscreenSort, #dpFullscreenBack, .hb-options-card .focused').forEach(el => el.classList.remove('focused'));
     document.querySelectorAll('.artwork-row').forEach(el => el.classList.remove('controller-focused'));
     document.querySelectorAll('[data-header-idx]').forEach(el => el.classList.remove('header-focused'));
 
@@ -2120,6 +2123,12 @@ function applyFocus() {
     }
     else if (currentZone === 'settingsModal') {
         applySettingsFocus();
+    }
+    else if (currentZone === 'launchOptionsModal') {
+        const controls = getLaunchOptionsControls();
+        launchOptionsFocusIndex = Math.max(0, Math.min(launchOptionsFocusIndex, controls.length - 1));
+        controls[launchOptionsFocusIndex]?.classList.add('focused');
+        controls[launchOptionsFocusIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     else if (currentZone === 'header') {
         const headerElements = getControllerHeaderElements();
@@ -2167,6 +2176,8 @@ function getControllerScrollTarget(axis, direction) {
         page = document.querySelector('#contextModal .modal-content');
     } else if (currentZone === 'renameModal') {
         page = document.querySelector('#renameModal .modal-content');
+    } else if (currentZone === 'launchOptionsModal') {
+        page = document.querySelector('.hb-options-body');
     } else {
         page = null;
     }
@@ -2235,6 +2246,11 @@ function scrollWithController(gamepad, now) {
     }
 }
 
+function getLaunchOptionsControls() {
+    return Array.from(document.querySelectorAll('.hb-options-card input:not([type="hidden"]), .hb-options-card select, .hb-options-card button'))
+        .filter((element) => !element.disabled && element.getClientRects().length > 0);
+}
+
 function handleGamepadLoop() {
     if (!isWindowFocused || !document.hasFocus() || document.visibilityState === 'hidden') {
         isWindowFocused = false;
@@ -2255,6 +2271,17 @@ function handleGamepadLoop() {
         if (hasInput) { requestAnimationFrame(handleGamepadLoop); return; }
         lastButtonState.fill(false);
         blockGamepadUntilNeutral = false;
+    }
+
+    const launchOptionsOpen = !!document.querySelector('.hb-dialog.open .hb-options-card');
+    if (launchOptionsOpen && currentZone !== 'launchOptionsModal') {
+        launchOptionsReturnZone = currentZone;
+        launchOptionsFocusIndex = 0;
+        currentZone = 'launchOptionsModal';
+        if (isControllerMode) applyFocus();
+    } else if (!launchOptionsOpen && currentZone === 'launchOptionsModal') {
+        currentZone = launchOptionsReturnZone;
+        if (isControllerMode) applyFocus();
     }
 
     if (isFullScreenPreviewActive && currentZone !== 'detail-panel') {
@@ -2335,6 +2362,18 @@ function handleGamepadLoop() {
                 if (up && renameFocusIndex > 0) { renameFocusIndex = 0; moved = true; }
                 if (right && renameFocusIndex === 1) { renameFocusIndex = 2; moved = true; }
                 if (left && renameFocusIndex === 2) { renameFocusIndex = 1; moved = true; }
+            }
+            else if (currentZone === 'launchOptionsModal') {
+                const controls = getLaunchOptionsControls();
+                if (down && launchOptionsFocusIndex + 1 < controls.length) { launchOptionsFocusIndex++; moved = true; }
+                if (up && launchOptionsFocusIndex > 0) { launchOptionsFocusIndex--; moved = true; }
+                const focusedControl = controls[launchOptionsFocusIndex];
+                if (focusedControl?.matches('select') && (left || right)) {
+                    const direction = right ? 1 : -1;
+                    focusedControl.selectedIndex = (focusedControl.selectedIndex + direction + focusedControl.options.length) % focusedControl.options.length;
+                    focusedControl.dispatchEvent(new Event('change', { bubbles: true }));
+                    moved = true;
+                }
             }
             else if (currentZone === 'header') {
                 const headerElements = getControllerHeaderElements();
@@ -2423,6 +2462,16 @@ function handleGamepadLoop() {
                 if (renameFocusIndex === 1) handleRenameSave();
                 else if (renameFocusIndex === 2) closeModal();
             }
+            else if (currentZone === 'launchOptionsModal') {
+                const focusedControl = getLaunchOptionsControls()[launchOptionsFocusIndex];
+                if (focusedControl?.matches('select')) {
+                    focusedControl.selectedIndex = (focusedControl.selectedIndex + 1) % focusedControl.options.length;
+                    focusedControl.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    focusedControl?.click();
+                    if (focusedControl?.matches('input:not([type="checkbox"])')) focusedControl.focus();
+                }
+            }
             else if (currentZone === 'header') { 
                 const activeEl = getControllerHeaderElements().find(el => Number(el.dataset.headerIdx) === headerFocusIndex);
                 if (activeEl) {
@@ -2453,6 +2502,8 @@ function handleGamepadLoop() {
         if (pressedB) {
             if (currentZone === 'settingsModal') {
                 closeModal();
+            } else if (currentZone === 'launchOptionsModal') {
+                document.querySelector('.hb-dialog.open .hb-options-card .hb-foot .hb-btn:not(.primary)')?.click();
             } else if (currentZone === 'brandMenu') {
                 document.dispatchEvent(new Event('hb-close-controller-menu'));
             } else if (currentZone === 'customizeModal' && customizeActionMode) {

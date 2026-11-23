@@ -117,16 +117,19 @@
         // Opaque panel colour derived from the active theme (so themes matter again)
         let surface;
         let onSurface;
+        let isLightTheme;
         if (id === 'dynamic') {
             surface = mix([11, 11, 15], dynRGB || DEFAULT_ACCENT, 0.1);
             // Text follows the panel colour it sits on, so it can never end up dark on dark (or light on light)
-            onSurface = lum(surface) > 0.4 ? '#15151a' : '#f2f3f5';
+            isLightTheme = lum(surface) > 0.4;
+            onSurface = isLightTheme ? '#15151a' : '#f2f3f5';
         } else {
-            const light = lum(parseColor(text, [0, 0, 0])) < 0.35; // dark text means a light theme
-            const c = parseColor(bg, light ? [244, 244, 247] : [18, 18, 20]);
-            surface = light ? mix(c, [255, 255, 255], 0.55) : mix(c, [8, 8, 12], 0.5);
-            onSurface = light ? '#15151a' : '#f2f3f5';
+            isLightTheme = lum(parseColor(text, [0, 0, 0])) < 0.35; // dark text means a light theme
+            const c = parseColor(bg, isLightTheme ? [244, 244, 247] : [18, 18, 20]);
+            surface = isLightTheme ? mix(c, [255, 255, 255], 0.55) : mix(c, [8, 8, 12], 0.5);
+            onSurface = isLightTheme ? '#15151a' : '#f2f3f5';
         }
+        root.dataset.themeAppearance = isLightTheme ? 'light' : 'dark';
         root.style.setProperty('--m-surface', `rgb(${surface.join(',')})`);
         root.style.setProperty('--m-on-surface', onSurface);
         root.style.setProperty('--dyn-text', onSurface);
@@ -177,6 +180,12 @@
         img.onload = () => { if (request === accentRequest) { dynRGB = pickAccent(img); syncTheme(); } };
         img.onerror = () => { if (request === accentRequest) { dynRGB = null; syncTheme(); } };
         img.src = artUrl;
+    }
+
+    function refreshDynamicAccent() {
+        const art = document.getElementById('dpHero')?.style.backgroundImage || '';
+        const match = art.match(/url\(["']?(.*?)["']?\)/);
+        updateDynamic(match ? match[1] : null);
     }
 
     // ======================================================================
@@ -891,5 +900,17 @@
     applyBrand();
     syncTheme();
     syncController();
-    document.addEventListener('hb-settings-applied', syncTheme);
+    document.addEventListener('hb-settings-applied', () => {
+        syncTheme();
+        if (themeId() === 'dynamic') refreshDynamicAccent();
+    });
+
+    let fullscreenState = '';
+    const fullscreenThemeObserver = new MutationObserver(() => {
+        const state = `${document.body.classList.contains('full-screen-mode')}:${document.body.classList.contains('full-screen-preview')}`;
+        if (state === fullscreenState) return;
+        fullscreenState = state;
+        if (themeId() === 'dynamic') refreshDynamicAccent();
+    });
+    fullscreenThemeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 })();
